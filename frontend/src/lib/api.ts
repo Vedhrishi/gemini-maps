@@ -1,0 +1,58 @@
+import axios from 'axios'
+
+export const API_URL = import.meta.env.VITE_API_URL || 'https://gemini-maps-api.onrender.com'
+export const WS_URL = API_URL.replace('https://', 'wss://').replace('http://', 'ws://')
+
+export interface HazardReport {
+  id: string
+  hazard_type: string
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  description: string
+  voice_summary: string
+  suggested_action: string
+  confidence: number
+  lat: number
+  lng: number
+  address?: string
+  upvotes: number
+  created_at: string
+}
+
+export interface AnalyzeResponse {
+  is_road_hazard: boolean
+  report?: HazardReport
+  confidence?: number
+  voice_summary?: string
+}
+
+export async function analyzeImage(
+  blob: Blob,
+  lat: number,
+  lng: number,
+  address = '',
+): Promise<AnalyzeResponse> {
+  const form = new FormData()
+  form.append('file', blob, 'capture.jpg')
+  form.append('lat', String(lat))
+  form.append('lng', String(lng))
+  form.append('address', address)
+  const { data } = await axios.post<AnalyzeResponse>(`${API_URL}/api/analyze`, form)
+  return data
+}
+
+export async function transcribeAudio(blob: Blob): Promise<string> {
+  const form = new FormData()
+  form.append('file', blob, 'voice.webm')
+  const { data } = await axios.post<{ text: string }>(`${API_URL}/api/transcribe`, form)
+  return data.text
+}
+
+export async function fetchReports(): Promise<HazardReport[]> {
+  const { data } = await axios.get<{ reports: HazardReport[] }>(`${API_URL}/api/reports`)
+  return data.reports
+}
+
+export async function upvoteReport(id: string): Promise<number> {
+  const { data } = await axios.post<{ upvotes: number }>(`${API_URL}/api/reports/${id}/upvote`)
+  return data.upvotes
+}
