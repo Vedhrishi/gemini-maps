@@ -101,7 +101,9 @@ def test_traffic_flow_parse_and_no_key(monkeypatch):
     from app import parse_flow
     assert parse_flow({"flowSegmentData": {"currentSpeed": 20, "freeFlowSpeed": 40}}) == 0.5
     assert parse_flow({"flowSegmentData": {"currentSpeed": 55, "freeFlowSpeed": 40}}) == 1.0
-    assert parse_flow({"flowSegmentData": {"roadClosure": True, "freeFlowSpeed": 40}}) == 0.05
+    assert parse_flow({"flowSegmentData": {"roadClosure": True, "currentSpeed": 0, "freeFlowSpeed": 40}}) is None
+    assert parse_flow({"flowSegmentData": {"currentSpeed": 2, "freeFlowSpeed": 40}}) == 0.25
+    assert parse_flow({"flowSegmentData": {"currentSpeed": 20, "freeFlowSpeed": 40, "confidence": 0.3}}) is None
     assert parse_flow({}) is None
     monkeypatch.delenv("TOMTOM_API_KEY", raising=False)
     from fastapi.testclient import TestClient

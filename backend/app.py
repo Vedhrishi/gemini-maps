@@ -264,7 +264,7 @@ async def places(request: Request, q: str, limit: int = 8, lat: float | None = N
     lim = max(1, min(limit, 15))
     d = await run_in_threadpool(detail.search, q[:80], near, lim)
     g = await run_in_threadpool(gazetteer.search, q[:80], near, lim)
-    return {"places": (d[:4] + g)[:lim] if d else g, "ready": gazetteer.ready}
+    return {"places": (g[:3] + d)[:lim] if d else g, "ready": gazetteer.ready}
 
 
 # ── Live traffic (TomTom Flow Segment Data; free tier ~2,500 requests/day) ─────
@@ -272,14 +272,18 @@ _flow_cache: dict = {}
 
 
 def parse_flow(j: dict):
-    """TomTom flowSegmentData -> speed ratio (current / free-flow), or None."""
+    """TomTom flowSegmentData -> speed ratio (current / free-flow), or None when the reading is unreliable.
+
+    Closures and low-confidence readings are ignored (a single closed service road must not turn a whole
+    route into "severe"), and the ratio never drops below 0.25, i.e. at most four times slower than free flow.
+    """
     d = (j or {}).get("flowSegmentData") or {}
     cur, free = d.get("currentSpeed"), d.get("freeFlowSpeed")
-    if not cur and not d.get("roadClosure"):
+    if d.get("roadClosure") or not cur or not free:
         return None
-    if not free:
+    if (d.get("confidence") or 1) < 0.6:
         return None
-    return 0.05 if d.get("roadClosure") else max(0.05, min(1.0, cur / free))
+    return max(0.25, min(1.0, cur / free))
 
 
 @app.get("/api/traffic/flow")
