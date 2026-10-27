@@ -88,3 +88,11 @@ Built for the **Meta AI Developer Hackathon**. Core Muse API integration:
 3. Your API will be `https://gemini-maps-api.onrender.com`, which the frontend already points to. If Render gives another name, build the site with `VITE_API_URL=https://<your-url>` then `npm run deploy`.
 4. Free instances sleep after ~15 min idle (first request ~50 s). Ping `/health` every 10 min with a free monitor (UptimeRobot) before the demo.
 5. Meta Muse: set `AI_PROVIDER=muse` and `MUSE_API_KEY`.
+
+## Data sources and coverage
+
+- Map data © OpenStreetMap contributors (ODbL), tiles by OpenFreeMap, routing by OSRM, search by Photon and Nominatim.
+- Offline place layers: Overture Maps Foundation (release 2026-10-21.0, CDLA-Permissive / ODbL) for India, plus GeoNames (CC BY 4.0).
+- Live traffic: TomTom Traffic Flow, sampled along the route. Without a key the app uses a typical-traffic model by city and hour.
+- Hazards come only from user reports. There is no national pothole dataset, so coverage grows with reports.
+- Worldwide search and routing work through the live services above. Offline street-level layers ship for India only; global offline data would be several hundred GB.

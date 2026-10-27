@@ -269,6 +269,8 @@ async def places(request: Request, q: str, limit: int = 8, lat: float | None = N
 
 # ── Live traffic (TomTom Flow Segment Data; free tier ~2,500 requests/day) ─────
 _flow_cache: dict = {}
+_flow_budget = {"day": "", "used": 0}
+FLOW_DAILY_LIMIT = int(os.getenv("TOMTOM_DAILY_LIMIT", "2000"))  # stay inside the free tier (2,500/day)
 
 
 def parse_flow(j: dict):
@@ -307,10 +309,16 @@ async def traffic_flow(request: Request, points: str):
         hit = _flow_cache.get((la, ln))
         if hit and now - hit[0] < 180:
             return hit[1]
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if _flow_budget["day"] != today:
+            _flow_budget.update(day=today, used=0)
+        if _flow_budget["used"] >= FLOW_DAILY_LIMIT:
+            return None  # budget spent: fall back to the typical-traffic model for the rest of the day
+        _flow_budget["used"] += 1
         try:
             r = await client.get(
-                "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json",
-                params={"key": key, "point": f"{la},{ln}", "unit": "KMPH"},
+                "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/15/json",
+                params={"key": key, "point": f"{la},{ln}", "unit": "KMPH", "thickness": 1},
             )
             ratio = parse_flow(r.json()) if r.status_code == 200 else None
         except Exception:

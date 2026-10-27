@@ -23,6 +23,8 @@ export interface TrafficInfo {
   source: 'live' | 'typical'
   /** local time the estimate is for */
   at: number
+  /** seconds this trip usually takes at this hour (the typical pattern, ignoring live readings) */
+  usual: number
 }
 export interface LiveSample { lat: number; lng: number; ratio: number }
 
@@ -110,6 +112,18 @@ export function cityPressure(lat: number, lng: number): number {
   return best
 }
 
+/**
+ * Junction and signal delay that map-derived free-flow speeds ignore. Larger where open map data
+ * overstates how fast city roads really move (dense mixed traffic, few grade-separated roads).
+ */
+function junctionDelay(lat: number, lng: number): number {
+  const india = lng > 68 && lng < 98 && lat > 6 && lat < 37.5
+  const seAsia = lng > 92 && lng < 141 && lat > -11 && lat < 25
+  const africa = lng > -18 && lng < 52 && lat > -35 && lat < 37
+  const latam = lng > -118 && lng < -34 && lat > -56 && lat < 32
+  return india || seAsia || africa || latam ? 0.3 : 0.18
+}
+
 /** How much a road of this free-flow speed (km/h) suffers: motorways least, city streets most. */
 function sensitivity(freeKmh: number) {
   if (freeKmh >= 90) return 0.3
@@ -132,43 +146,57 @@ function freeAt(route: Route, d: number) {
   return l[lo].kmh
 }
 
-/** Expected time to drive the route, with the slowdown at each stretch. Seconds. */
-export function predictDuration(route: Route, at: number, live?: LiveSample[]): number {
+/** Expected seconds to drive the route: with live readings when given, and the typical pattern for the same moment. */
+export function predictDuration(route: Route, at: number, live?: LiveSample[]): { duration: number; usual: number } {
   const step = Math.max(250, route.distance / 4000)
-  let t = 0, tFree = 0
+  let t = 0, tTyp = 0, tFree = 0
   for (let d = 0; d < route.distance; d += step) {
     const len = Math.min(step, route.distance - d)
     const mid = d + len / 2
     const [lat, lng] = posAt(route, mid)
     const free = Math.max(15, freeAt(route, mid))
     const { h, dow } = localHour(at, lat, lng)
-    // 0.18: signals and junctions the routing engine ignores; 1.2: rush-hour weight
-    let c = cityPressure(lat, lng) * (0.18 + 1.2 * demand(h, dow)) * sensitivity(free)
+    const press = cityPressure(lat, lng) * sensitivity(free)
+    const base = junctionDelay(lat, lng)
+    const dm = demand(h, dow)
+    const cTyp = press * (base + 1.2 * dm)
+    let c = cTyp
     if (live?.length) {
-      let near: LiveSample | null = null, nd = 6 // measured speeds within 6 km win over the typical pattern
+      let near: LiveSample | null = null, nd = 6 // measured speeds within 6 km adjust the rush-hour part
       for (const s of live) { const k = km(lat, lng, s.lat, s.lng); if (k < nd) { nd = k; near = s } }
-      if (near) c = Math.max(0, 1 / Math.max(0.12, Math.min(1, near.ratio)) - 1)
+      if (near && press > 0.02) {
+        const cLive = Math.max(0, 1 / Math.max(0.25, Math.min(1, near.ratio)) - 1)
+        // The measured slowdown replaces half of the modelled rush-hour demand; junction delay always stays
+        const demandEff = Math.max(0, Math.min(1.3, 0.5 * dm + 0.5 * (cLive / (press * 1.2))))
+        c = press * (base + 1.2 * demandEff)
+      } else if (near) c = Math.max(0, 1 / Math.max(0.25, Math.min(1, near.ratio)) - 1)
     }
-    const v = Math.max(4, free / (1 + c)) // km/h
-    t += len / (v / 3.6)
-    tFree += len / (free / 3.6)
+    const f = (cc: number) => len / (Math.max(4, free / (1 + cc)) / 3.6)
+    t += f(c); tTyp += f(cTyp); tFree += len / (free / 3.6)
   }
   // Apply the slowdown ratio to the routing engine's own free-flow time (which already includes turns and signals)
-  return route.freeDuration * Math.max(1, t / Math.max(1, tFree))
+  const scale = (x: number) => route.freeDuration * Math.max(1, x / Math.max(1, tFree))
+  return { duration: scale(t), usual: scale(tTyp) }
+}
+
+/** Structural (always-present) junction delay at the middle of the route. */
+function junctionAt(route: Route): number {
+  const [lat, lng] = posAt(route, route.distance / 2)
+  return junctionDelay(lat, lng)
 }
 
 export function levelFor(ratio: number): TrafficLevel {
-  return ratio < 1.15 ? 'light' : ratio < 1.4 ? 'moderate' : ratio < 1.8 ? 'heavy' : 'severe'
+  return ratio < 1.12 ? 'light' : ratio < 1.35 ? 'moderate' : ratio < 1.7 ? 'heavy' : 'severe'
 }
 
 /** Update a route's duration and traffic info for the given moment. Returns a new Route. */
 export function withTraffic(route: Route, at = Date.now(), live?: LiveSample[]): Route {
-  const duration = predictDuration(route, at, live)
+  const { duration, usual } = predictDuration(route, at, live)
   const free = route.freeDuration
   return {
     ...route,
     duration,
-    traffic: { level: levelFor(duration / Math.max(1, free)), delay: Math.max(0, duration - free), source: live?.length ? 'live' : 'typical', at },
+    traffic: { level: levelFor(duration / Math.max(1, free * (1 + 0.7 * junctionAt(route)))), delay: Math.max(0, duration - free), source: live?.length ? 'live' : 'typical', at, usual },
   }
 }
 
@@ -185,7 +213,7 @@ let liveOffUntil = 0
 /** Measured speed ratios (current / free-flow) at a few points along the route, or [] when there is no live feed. */
 export async function fetchLive(route: Route): Promise<LiveSample[]> {
   if (Date.now() < liveOffUntil) return []
-  const n = Math.max(2, Math.min(6, Math.round(route.distance / 4000)))
+  const n = Math.max(3, Math.min(8, Math.round(route.distance / 2500)))
   const pts: string[] = []
   for (let i = 0; i < n; i++) {
     const [lat, lng] = posAt(route, (route.distance * (i + 0.5)) / n)
@@ -201,4 +229,28 @@ export async function fetchLive(route: Route): Promise<LiveSample[]> {
     liveOffUntil = Date.now() + 2 * 60_000
     return []
   }
+}
+
+const spokenDur = (sec: number) => {
+  const m = Math.max(1, Math.round(sec / 60))
+  if (m < 60) return `${m} minute${m === 1 ? '' : 's'}`
+  const h = Math.floor(m / 60), r = m % 60
+  return `${h} hour${h === 1 ? '' : 's'}${r ? ` ${r} minutes` : ''}`
+}
+
+/** One short sentence for when a trip is ready: how traffic compares with usual, the time, and the destination. */
+export function trafficSpeech(route: Route, dest: string, hazards: number): string {
+  const tr = route.traffic
+  const eta = spokenDur(route.duration)
+  let lead: string
+  if (!tr) lead = `It will take about ${eta} to reach ${dest}.`
+  else {
+    const ratio = route.duration / Math.max(1, tr.usual)
+    const extra = Math.round((route.duration - tr.usual) / 60)
+    if (ratio > 1.15 && extra >= 2) lead = `Traffic isn't usual: it's heavier than normal for this time. It will take about ${eta}, ${extra} minutes longer than usual, to reach ${dest}.`
+    else if (ratio < 0.87 && extra <= -2) lead = `Traffic is lighter than usual. It will take about ${eta} to reach ${dest}.`
+    else if (tr.level === 'heavy' || tr.level === 'severe') lead = `Traffic is heavy, as it usually is now. It will take about ${eta} to reach ${dest}.`
+    else lead = `Traffic is normal. It will take about ${eta} to reach ${dest}.`
+  }
+  return hazards > 0 ? `${lead} ${hazards} reported hazard${hazards > 1 ? 's' : ''} on the way.` : lead
 }

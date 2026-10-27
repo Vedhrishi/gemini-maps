@@ -20,6 +20,7 @@ import { TripHUD } from './components/TripHUD'
 import { useNavigation } from './hooks/useNavigation'
 import { haversine, searchPlaces, DEMO_TRIPS, divergencePoint, fetchRoutes, pointAt, Route, fmtKm, fmtDur, clock } from './lib/routing'
 import { VEHICLES, money } from './lib/fuel'
+import { trafficSpeech } from './lib/traffic'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useVoice, speak } from './hooks/useVoice'
 import { useLocation, lastKnown } from './hooks/useLocation'
@@ -276,6 +277,17 @@ export default function App() {
       setReports(prev => prev.some(r => r.id.startsWith('demo-live')) ? prev.filter(r => !r.id.startsWith('demo-live')) : prev) // the staged test hazard never outlives its drive
     }
   }, [nav.status])
+
+  // When a trip is ready, say how traffic is and how long it will take (once per destination and place, and only while voice is on)
+  const spokenFor = useRef('')
+  useEffect(() => {
+    if (nav.status !== 'ready' || !nav.trafficReady || !nav.current || !nav.to || !voiceEnabled) return
+    const key = `${nav.to.lat.toFixed(4)},${nav.to.lng.toFixed(4)}|${nav.from?.lat.toFixed(3)},${nav.from?.lng.toFixed(3)}`
+    if (spokenFor.current === key) return
+    spokenFor.current = key
+    speak(trafficSpeech(nav.current.route, nav.to.name, nav.current.hazards.length))
+  }, [nav.status, nav.trafficReady, nav.current, nav.to, nav.from, voiceEnabled])
+  useEffect(() => { if (nav.status === 'idle') spokenFor.current = '' }, [nav.status])
 
   // Routes are drawn on the 3D map, so make sure it is the one showing
   useEffect(() => { if (nav.status !== 'idle') setMap3d(true) }, [nav.status])

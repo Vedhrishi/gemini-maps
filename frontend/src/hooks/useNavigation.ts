@@ -53,6 +53,7 @@ export function useNavigation({ reports, toast, speak }: Deps) {
   const [routeStates, setRouteStates] = useState<((string | null)[] | null)[]>([])
   const [selected, setSelected] = useState(0)
   const liveRef = useRef<LiveSample[]>([])
+  const [trafficReady, setTrafficReady] = useState(false) // true once the first live-traffic check for this plan has finished
   const routesRef = useRef<Route[]>([])
   const selectedRef = useRef(0)
   const [vehicleId, setVehicleIdRaw] = useState(() => {
@@ -198,7 +199,8 @@ export function useNavigation({ reports, toast, speak }: Deps) {
   const planned = status === 'ready' && routes.length > 0
   const firstRoute = routes[0]
   useEffect(() => {
-    if (!planned) return
+    if (!planned) { setTrafficReady(false); return }
+    setTrafficReady(false)
     let dead = false
     const recompute = () => setRoutes(rs => rs.map(r => withTraffic(r, Date.now(), liveRef.current)))
     const pullLive = async () => {
@@ -208,6 +210,7 @@ export function useNavigation({ reports, toast, speak }: Deps) {
       if (dead) return
       liveRef.current = live
       recompute()
+      setTrafficReady(true)
     }
     liveRef.current = []
     pullLive()
@@ -450,7 +453,7 @@ export function useNavigation({ reports, toast, speak }: Deps) {
   }, [traveled, status, current, trip, nextStep, ahead, remainingM, speak, toast, to])
 
   return {
-    status, from, to, error, options, selected, current, vehicle, vehicleId,
+    status, from, to, error, options, selected, current, vehicle, vehicleId, trafficReady,
     fuelLoading, trip, startedAt, planId,
     traveled, total, remainingM, remainingSec, tripPos, fuelUsed, nextStep, ahead,
     guardian, agentLog, tripTotals, limitKmh, speedKmh, advisedKmh,
