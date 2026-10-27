@@ -406,9 +406,31 @@ async def analyze(
 
 
 @app.get("/api/ai-check")
-async def ai_check(request: Request):
+async def ai_check(request: Request, deep: int = 0):
     """Diagnostic: runs one tiny vision call and reports the provider's error (never the key)."""
     _limit(request, "aicheck", 6)
+    if deep:
+        key = os.environ.get("MUSE_API_KEY") or os.environ.get("MODEL_API_KEY") or ""
+        h = {"Authorization": f"Bearer {key}"}
+        out = {"key_len": len(key)}
+        async with httpx.AsyncClient(timeout=30) as c:
+            try:
+                r = await c.get("https://api.meta.ai/v1/models", headers=h)
+                out["models"] = [r.status_code, r.text[:600]]
+            except Exception as e:
+                out["models"] = str(e)[:200]
+            for mid in ("muse-spark-1.3", "muse-spark-1.2"):
+                try:
+                    r = await c.post("https://api.meta.ai/v1/responses", headers=h, json={"model": mid, "input": "Say ok"})
+                    out["responses_" + mid] = [r.status_code, r.text[:250]]
+                except Exception as e:
+                    out["responses_" + mid] = str(e)[:200]
+            try:
+                r = await c.post("https://api.meta.ai/v1/chat/completions", headers=h, json={"model": "muse-spark-1.3", "messages": [{"role": "user", "content": "Say ok"}]})
+                out["chat_muse-spark-1.3"] = [r.status_code, r.text[:250]]
+            except Exception as e:
+                out["chat_muse-spark-1.3"] = str(e)[:200]
+        return out
     from PIL import Image
     buf = io.BytesIO()
     Image.new("RGB", (64, 64), (128, 128, 128)).save(buf, format="JPEG")
