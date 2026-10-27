@@ -150,7 +150,7 @@ def _muse_analyze(image_bytes: bytes) -> dict:
             )
             break
         except Exception as e:  # model not enabled for this key: try the next version
-            last = f"{model}: {type(e).__name__}: {str(e)[:200]}"
+            last = ((last + " | ") if last else "") + f"{model}: {type(e).__name__}: {str(e)[:160]}"
     if response is None:
         raise RuntimeError(last)
     text = response.choices[0].message.content or ""
