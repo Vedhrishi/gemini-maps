@@ -1,79 +1,33 @@
-# 🚧 Gemini Maps — AI Road Hazard Reporter
+# Gemini Maps
 
-Real-time crowdsourced road hazard reporting powered by **Gemini Vision** (today) / **Meta Muse** (tomorrow).
+A navigation app that warns you about the road, not just the route. Drivers report hazards (potholes, flooding, accidents, broken signals) with a photo or their voice. Everyone nearby sees the report within seconds, and a Guardian agent re-routes you if a serious hazard appears ahead on your trip.
 
-**Live site**: https://vedhrishi.github.io/gemini-maps
+**Live app:** https://vedhrishi.github.io/gemini-maps/
+Built for the Meta Global AI Developer Hackathon, 2026.
 
-## 🎤 Voice-First Flow
+## What it does
 
-1. Say **"report hazard"** → camera opens automatically
-2. Camera auto-captures the road → AI analyzes the image
-3. A hazard pin appears **instantly on everyone's map** via WebSocket
-4. The app reads back a voice summary: *"Large pothole detected. High severity. Avoid right lane."*
+- **Hazard reports:** a photo is analysed by AI (Gemini Vision, or Meta Muse with one setting) and pinned on a shared 3D map. Duplicate reports within 60 m are merged into an upvote.
+- **Guardian:** during a trip it watches for new critical or high-severity hazards ahead, compares the safer alternatives, and switches route only when it is clearly better. It explains every decision.
+- **Navigation:** routes ranked by time, hazards and fuel cost, with turn-by-turn voice, speed limits and per-vehicle fuel estimates.
+- **Traffic:** typical speeds for the hour and city, blended with live TomTom flow along your route. On finalising a trip it tells you out loud how long the drive will take and whether traffic is unusual.
+- **Voice control:** say "Hey Gemini" and then things like "navigate to Charminar", "how's the traffic", "any hazards ahead", "nearest petrol pump", "fastest route", "reroute", "zoom in" or "report pothole".
+- **Nearby:** one tap or one phrase finds the closest petrol pump, EV charger, restaurant, ATM, hospital, pharmacy and more, and routes to it.
+- **Search:** about 4.9 million India places, shops and named buildings plus street names work from files cached on the device. The rest of the world uses live OpenStreetMap services.
+- **Your location:** uses GPS, or lets you pick a location on the map when the device only knows its area roughly.
 
-## 🚀 Switching to Meta Muse (tomorrow)
+## Stack
 
-1. Add your Muse API key to `backend/.env`:
-   ```
-   AI_PROVIDER=muse
-   MUSE_API_KEY=your_key_here
-   ```
-2. Restart the backend. Zero other changes needed.
+React 18, TypeScript, Vite and MapLibre on GitHub Pages. FastAPI on Render. Optional Supabase storage. OSRM routing, OpenFreeMap tiles, TomTom traffic.
 
-## 🏗 Architecture
+## Run it locally
 
-```
-Frontend (React + Leaflet) → GitHub Pages
-         │                    ↕ WebSocket (real-time)
-         └──────────────────► FastAPI Backend → Render.com
-                                      │
-                              Gemini / Muse Vision API
-                                      │
-                              Supabase (PostgreSQL)
-```
-
-## 🛠 Local Development
-
-### Backend
 ```bash
-cd backend
-pip install -r requirements.txt
-cp .env.example .env   # add your keys
-uvicorn app:app --reload
+cd backend && pip install -r requirements.txt && cp .env.example .env && uvicorn app:app --reload
+cd frontend && npm install && npm run dev
 ```
 
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Deploy
-```bash
-# Frontend → GitHub Pages
-cd frontend && npm run deploy
-
-# Backend → Render.com
-# Connect repo to Render, set env vars in dashboard
-```
-
-## 🎯 Features
-
-- 📸 Voice-triggered camera capture (`"report hazard"`)
-- 🔊 TTS readback of hazard analysis
-- 🗺️ Real-time hazard pins via WebSocket (all users see instantly)
-- 👍 Upvote system to confirm hazards
-- 🌍 8 hazard types: pothole, debris, flood, accident, broken signal, road crack, waterlogging, other
-- ⚡ Provider-agnostic AI: Gemini today, Muse tomorrow (one env var)
-- 🔄 Auto-reconnecting WebSocket with keepalive
-- 🆓 Free hosting: GitHub Pages + Render.com + Supabase free tier
-
-## 🏆 Meta Hackathon
-
-Built for the **Meta AI Developer Hackathon**. Core Muse API integration:
-- `muse-spark-1.3` — vision analysis of road hazard images
-- `muse-voice-transcribe-1.0` — voice command transcription
+Frontend deploy: `cd frontend && npm run deploy`. Tests: `cd backend && AI_PROVIDER=mock pytest -q`.
 
 ## Backend (FastAPI) — run and deploy
 
