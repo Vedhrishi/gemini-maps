@@ -1,10 +1,9 @@
-import L from 'leaflet'
 
 export const HAZARD_ICONS: Record<string, string> = {
   pothole: '🕳️',
   debris: '🪨',
   flood: '🌊',
-  accident: '🚗',
+  accident: '💥',
   broken_signal: '🚦',
   road_crack: '⚡',
   waterlogging: '💧',
@@ -23,40 +22,17 @@ export const HAZARD_LABELS: Record<string, string> = {
 }
 
 export const SEVERITY_COLORS: Record<string, string> = {
-  low: '#388bfd',
-  medium: '#d29922',
-  high: '#f85149',
-  critical: '#da3633',
+  low: '#00cc66',
+  medium: '#ffaa00',
+  high: '#ff6600',
+  critical: '#ff2266',
 }
 
 export const SEVERITY_BG: Record<string, string> = {
-  low: 'rgba(56,139,253,0.15)',
-  medium: 'rgba(210,153,34,0.15)',
-  high: 'rgba(248,81,73,0.15)',
-  critical: 'rgba(218,54,51,0.2)',
-}
-
-export function createHazardIcon(hazardType: string, severity: string) {
-  const emoji = HAZARD_ICONS[hazardType] || '⚠️'
-  const color = SEVERITY_COLORS[severity] || '#8b949e'
-  return L.divIcon({
-    className: '',
-    html: `
-      <div style="
-        display:flex;align-items:center;justify-content:center;
-        width:40px;height:40px;border-radius:50%;
-        background:${color};
-        border:2px solid #fff;
-        box-shadow:0 2px 8px rgba(0,0,0,0.5);
-        font-size:20px;
-        cursor:pointer;
-        transition:transform 0.15s;
-      ">${emoji}</div>
-    `,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-    popupAnchor: [0, -20],
-  })
+  low: 'rgba(0,204,102,0.15)',
+  medium: 'rgba(255,170,0,0.15)',
+  high: 'rgba(255,102,0,0.15)',
+  critical: 'rgba(255,34,102,0.18)',
 }
 
 export function timeAgo(iso: string): string {

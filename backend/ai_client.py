@@ -7,7 +7,7 @@ TOMORROW → provider="muse"  uses Meta Muse API (OpenAI-SDK compatible)
 Swap by changing PROVIDER in .env. Zero other code changes needed.
 """
 
-import os, io, json, re, base64
+import os, io, json, re, base64, time
 from enum import Enum
 from PIL import Image
 
@@ -38,36 +38,66 @@ def _parse_json(text: str) -> dict:
 
 # ── Gemini provider ───────────────────────────────────────────────────────────
 
-def _gemini_analyze(image_bytes: bytes) -> dict:
-    import google.generativeai as genai
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-    model = genai.GenerativeModel("gemini-2.0-flash")
+GEMINI_MODELS = [m for m in [os.getenv("GEMINI_MODEL")] if m] + ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"]
 
-    img = Image.open(io.BytesIO(image_bytes))
+
+def _gemini_call(parts: list, json_out: bool) -> str:
+    """Call the Gemini REST API directly, falling back across models.
+
+    Google retires model names (gemini-2.0-flash is already gone), so the list
+    starts with the `-latest` alias and falls back on 404 / 429 / 5xx.
+    """
+    import httpx
+    key = os.environ["GEMINI_API_KEY"]
+    body = {"contents": [{"parts": parts}]}
+    if json_out:
+        body["generationConfig"] = {"responseMimeType": "application/json", "temperature": 0.2}
+    last = ""
+    for model in GEMINI_MODELS:
+        for attempt in range(2):
+            try:
+                r = httpx.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                    headers={"x-goog-api-key": key}, json=body, timeout=40,
+                )
+            except httpx.HTTPError as e:
+                last = f"{model}: {type(e).__name__}"
+                continue
+            if r.status_code == 200:
+                data = r.json()
+                try:
+                    return "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
+                except (KeyError, IndexError):
+                    last = f"{model}: empty response"
+                    break
+            last = f"{model}: HTTP {r.status_code}"
+            if r.status_code in (404, 400):
+                break  # try the next model
+            time.sleep(1.2 * (attempt + 1))
+    raise RuntimeError(f"Gemini unavailable ({last})")
+
+
+def _gemini_analyze(image_bytes: bytes) -> dict:
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     if max(img.size) > 1024:
         r = 1024 / max(img.size)
-        img = img.resize((int(img.size[0]*r), int(img.size[1]*r)), Image.LANCZOS)
+        img = img.resize((int(img.size[0] * r), int(img.size[1] * r)), Image.LANCZOS)
     buf = io.BytesIO()
-    img.save(buf, format="JPEG")
-    buf.seek(0)
-
-    response = model.generate_content([
-        ANALYSIS_PROMPT,
-        {"mime_type": "image/jpeg", "data": buf.read()}
-    ])
-    return _parse_json(response.text)
+    img.save(buf, format="JPEG", quality=85)
+    text = _gemini_call(
+        [{"text": ANALYSIS_PROMPT}, {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(buf.getvalue()).decode()}}],
+        json_out=True,
+    )
+    return _parse_json(text)
 
 
 def _gemini_transcribe(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
     """Transcribe audio using Gemini (today). Swap to Muse Voice tomorrow."""
-    import google.generativeai as genai
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    response = model.generate_content([
-        "Transcribe this audio exactly. Return only the transcribed text, nothing else.",
-        {"mime_type": mime_type, "data": audio_bytes}
-    ])
-    return response.text.strip()
+    return _gemini_call(
+        [{"text": "Transcribe this audio exactly. Return only the transcribed text, nothing else."},
+         {"inline_data": {"mime_type": mime_type, "data": base64.b64encode(audio_bytes).decode()}}],
+        json_out=False,
+    ).strip()
 
 
 # ── Muse provider (ready for tomorrow) ───────────────────────────────────────
@@ -118,13 +148,32 @@ def _muse_transcribe(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-async def analyze_image(image_bytes: bytes) -> dict:
-    if PROVIDER == "muse":
+def _mock_analyze(image_bytes: bytes) -> dict:
+    """Deterministic stand-in so the whole stack can be tested without an API key."""
+    k = sum(image_bytes[:64]) % 3
+    kind = ["pothole", "waterlogging", "debris"][k]
+    return {
+        "is_road_hazard": True, "hazard_type": kind,
+        "severity": ["medium", "high", "low"][k],
+        "description": f"Mock analysis: {kind} detected on the road.",
+        "confidence": 0.9, "suggested_action": "Slow down and keep left",
+        "voice_summary": f"{kind.title()} detected. Slow down.",
+    }
+
+
+def analyze_image_sync(image_bytes: bytes) -> dict:
+    p = os.getenv("AI_PROVIDER", PROVIDER)
+    if p == "muse":
         return _muse_analyze(image_bytes)
+    if p == "mock":
+        return _mock_analyze(image_bytes)
     return _gemini_analyze(image_bytes)
 
 
-async def transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
-    if PROVIDER == "muse":
+def transcribe_audio_sync(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
+    p = os.getenv("AI_PROVIDER", PROVIDER)
+    if p == "muse":
         return _muse_transcribe(audio_bytes, mime_type)
+    if p == "mock":
+        return "navigate to Charminar"
     return _gemini_transcribe(audio_bytes, mime_type)

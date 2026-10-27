@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS hazard_reports (
   hazard_type TEXT NOT NULL,
   severity TEXT NOT NULL CHECK (severity IN ('low', 'medium', 'high', 'critical')),
   description TEXT NOT NULL,
+  voice_summary TEXT,
+  suggested_action TEXT,
   confidence FLOAT DEFAULT 0,
   lat DOUBLE PRECISION NOT NULL,
   lng DOUBLE PRECISION NOT NULL,
@@ -35,3 +37,7 @@ CREATE POLICY "Anyone can upvote hazard reports"
   ON hazard_reports FOR UPDATE
   USING (true)
   WITH CHECK (true);
+
+-- Upgrading an existing table:
+-- ALTER TABLE hazard_reports ADD COLUMN IF NOT EXISTS voice_summary TEXT;
+-- ALTER TABLE hazard_reports ADD COLUMN IF NOT EXISTS suggested_action TEXT;

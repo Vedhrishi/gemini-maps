@@ -26,3 +26,11 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+backend/data/user_places.json
+
+# Large generated map data: rebuilt by data-build/*.py, shipped with the site deploy
+frontend/public/data/cells/
+frontend/public/data/streets/
+data-build/india/
+data-build/*.tsv.gz
+*.tar

@@ -21,6 +21,7 @@ export interface HazardReport {
 export interface AnalyzeResponse {
   is_road_hazard: boolean
   report?: HazardReport
+  merged?: boolean
   confidence?: number
   voice_summary?: string
 }
@@ -48,11 +49,15 @@ export async function transcribeAudio(blob: Blob): Promise<string> {
 }
 
 export async function fetchReports(): Promise<HazardReport[]> {
-  const { data } = await axios.get<{ reports: HazardReport[] }>(`${API_URL}/api/reports`)
-  return data.reports
+  const { data } = await axios.get<{ reports?: HazardReport[] } | HazardReport[]>(
+    `${API_URL}/api/reports`
+  )
+  // Tolerate both {reports:[...]} and a bare [...] payload
+  if (Array.isArray(data)) return data
+  return Array.isArray(data?.reports) ? data.reports : []
 }
 
 export async function upvoteReport(id: string): Promise<number> {
-  const { data } = await axios.post<{ upvotes: number }>(`${API_URL}/api/reports/${id}/upvote`)
-  return data.upvotes
+  const { data } = await axios.post<{ upvotes?: number }>(`${API_URL}/api/reports/${id}/upvote`)
+  return typeof data?.upvotes === 'number' ? data.upvotes : 0
 }

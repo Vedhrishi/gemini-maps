@@ -1,7 +1,7 @@
 services:
   - type: web
     name: gemini-maps-api
-    env: python
+    runtime: python
     region: oregon
     plan: free
     rootDir: backend
@@ -16,6 +16,14 @@ services:
         sync: false
       - key: SUPABASE_ANON_KEY
         sync: false
+      - key: GEMINI_MODEL
+        value: gemini-flash-latest
+      - key: ALLOWED_ORIGINS
+        value: https://vedhrishi.github.io,http://localhost:5173,http://localhost:4173
+      - key: TOMTOM_API_KEY
+        sync: false          # Optional: free key from developer.tomtom.com turns on live traffic
+      - key: SEED_DEMO
+        value: "0"          # never seed sample reports
       - key: MUSE_API_KEY
         sync: false          # Add tomorrow when Meta API key arrives
     healthCheckPath: /health

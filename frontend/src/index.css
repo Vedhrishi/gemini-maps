@@ -1,29 +1,87 @@
-/* ── Reset & base ──────────────────────────────────────────────────────────── */
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #0d1117;
-  --surface: #161b22;
-  --surface2: #21262d;
-  --border: #30363d;
-  --text: #e6edf3;
-  --text2: #8b949e;
-  --accent: #238636;
-  --accent2: #2ea043;
-  --danger: #da3633;
-  --warn: #d29922;
-  --info: #388bfd;
-  --radius: 8px;
-  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --bg: #040810;
+  --surface: rgba(8, 16, 32, 0.85);
+  --surface2: rgba(16, 28, 52, 0.7);
+  --surface3: rgba(20, 36, 64, 0.5);
+  --border: rgba(56, 139, 253, 0.15);
+  --border2: rgba(56, 139, 253, 0.3);
+  --text: #e8f4ff;
+  --text2: #7a9cc0;
+  --text3: #4a6a8a;
+  --accent: #00d4ff;
+  --accent2: #0096ff;
+  --accent3: rgba(0, 212, 255, 0.1);
+  --danger: #ff4444;
+  --danger2: rgba(255, 68, 68, 0.15);
+  --warn: #ffaa00;
+  --warn2: rgba(255, 170, 0, 0.15);
+  --success: #00ff88;
+  --success2: rgba(0, 255, 136, 0.12);
+  --critical: #ff2266;
+  --high: #ff6600;
+  --medium: #ffaa00;
+  --low: #00cc66;
+  --radius: 12px;
+  --radius2: 16px;
+  --font: 'Inter', system-ui, -apple-system, sans-serif;
+  --font2: 'Space Grotesk', system-ui, sans-serif;
+  --glow: 0 0 20px rgba(0, 212, 255, 0.3);
+  --glow2: 0 0 40px rgba(0, 212, 255, 0.15);
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --shadow2: 0 24px 64px rgba(0, 0, 0, 0.8);
 }
 
 html, body, #root {
   height: 100%;
+  height: 100dvh;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
   font-size: 14px;
   line-height: 1.5;
+  overflow: hidden;
+}
+
+/* Animated mesh background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 20%, rgba(0, 100, 255, 0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(0, 200, 255, 0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 60% at 60% 10%, rgba(100, 0, 255, 0.03) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Grid overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 150, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 150, 255, 0.025) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+#root { position: relative; z-index: 1; }
+
+/* Glass card */
+.glass {
+  background: var(--surface);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--border);
 }
 
 button {
@@ -32,10 +90,20 @@ button {
   font-size: 14px;
   border: none;
   border-radius: var(--radius);
-  transition: opacity 0.15s, transform 0.1s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
 }
+button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0);
+  transition: background 0.15s;
+}
+button:hover::after { background: rgba(255,255,255,0.04); }
 button:active { transform: scale(0.97); }
-button:disabled { opacity: 0.4; cursor: not-allowed; }
+button:disabled { opacity: 0.35; cursor: not-allowed; }
 
 input, textarea {
   font-family: var(--font);
@@ -47,31 +115,130 @@ input, textarea {
 }
 input:focus, textarea:focus {
   outline: none;
-  border-color: var(--info);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
 }
-
-/* Leaflet overrides */
-.leaflet-container { background: #1a2030 !important; }
-.leaflet-popup-content-wrapper {
-  background: var(--surface) !important;
-  color: var(--text) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius) !important;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
-}
-.leaflet-popup-tip { background: var(--surface) !important; }
-.leaflet-control-zoom a {
-  background: var(--surface) !important;
-  color: var(--text) !important;
-  border-color: var(--border) !important;
-}
-.leaflet-control-attribution {
-  background: rgba(13,17,23,0.8) !important;
-  color: var(--text2) !important;
-}
-.leaflet-control-attribution a { color: var(--info) !important; }
 
 /* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent2); }
+
+/* Leaflet overrides */
+.leaflet-container {
+  background: #020608 !important;
+  font-family: var(--font) !important;
+}
+
+/* Dark mission-control tiles — invert + hue-rotate standard OSM into a blue night map */
+.dark-tiles {
+  filter: invert(1) hue-rotate(185deg) brightness(0.92) contrast(1.15) saturate(0.75);
+}
+.leaflet-popup-content-wrapper {
+  background: rgba(4, 10, 20, 0.95) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border2) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.8), 0 0 0 1px rgba(0,212,255,0.1) !important;
+  backdrop-filter: blur(24px) !important;
+}
+.leaflet-popup-tip { background: rgba(4, 10, 20, 0.95) !important; }
+.leaflet-popup-content { margin: 14px 18px !important; }
+.leaflet-control-zoom {
+  border: 1px solid var(--border2) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+  backdrop-filter: blur(16px);
+}
+.leaflet-control-zoom a {
+  background: rgba(4, 10, 24, 0.9) !important;
+  color: var(--accent) !important;
+  border-color: var(--border) !important;
+  font-weight: 700;
+  width: 36px !important;
+  height: 36px !important;
+  line-height: 36px !important;
+}
+.leaflet-control-zoom a:hover { background: var(--surface2) !important; }
+.leaflet-control-attribution {
+  background: rgba(4, 8, 16, 0.7) !important;
+  color: var(--text3) !important;
+  font-size: 10px !important;
+  backdrop-filter: blur(8px);
+  border-radius: 8px 0 0 0 !important;
+}
+.leaflet-control-attribution a { color: var(--accent2) !important; }
+
+/* ── Animations ─────────────────────────────────────────────────────────────── */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+@keyframes ping {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+@keyframes radar {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(0,212,255,0.3); }
+  50% { box-shadow: 0 0 28px rgba(0,212,255,0.7), 0 0 56px rgba(0,212,255,0.3); }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to { background-position: 200% center; }
+}
+
+@keyframes countdown-pop {
+  0% { transform: scale(1.5); opacity: 0; }
+  40% { transform: scale(1); opacity: 1; }
+  80% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.8); opacity: 0; }
+}
+
+@keyframes scan-line {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(100vh); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes border-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ── Utility classes ─────────────────────────────────────────────────────────── */
+.anim-slide-up { animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.anim-slide-in { animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.anim-fade-in { animation: fadeIn 0.3s ease; }
+
+/* iOS standalone: keep controls clear of notch / home indicator */
+:root{--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px)}
+@media (display-mode: standalone){body{padding-top:0}}

@@ -1,0 +1,23 @@
+{
+  "packageId": "io.github.vedhrishi.geminimaps",
+  "host": "vedhrishi.github.io",
+  "name": "Gemini Maps",
+  "launcherName": "Gemini Maps",
+  "display": "standalone",
+  "orientation": "portrait",
+  "themeColor": "#050b18",
+  "navigationColor": "#050b18",
+  "backgroundColor": "#050b18",
+  "startUrl": "/gemini-maps/",
+  "iconUrl": "https://vedhrishi.github.io/gemini-maps/icon-512.png",
+  "maskableIconUrl": "https://vedhrishi.github.io/gemini-maps/icon-maskable-512.png",
+  "webManifestUrl": "https://vedhrishi.github.io/gemini-maps/manifest.webmanifest",
+  "appVersionName": "1.0.0",
+  "appVersion": "1",
+  "enableNotifications": false,
+  "fallbackType": "customtabs",
+  "features": { "locationDelegation": { "enabled": true } },
+  "signingKey": { "path": "./android.keystore", "alias": "geminimaps" },
+  "minSdkVersion": 21,
+  "targetSdkVersion": 35
+}
