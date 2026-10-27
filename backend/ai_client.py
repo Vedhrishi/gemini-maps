@@ -114,7 +114,7 @@ def _gemini_transcribe(audio_bytes: bytes, mime_type: str = "audio/webm") -> str
 # /asr/transcribe route for Muse Voice Transcribe (WAV only, multipart).
 
 MUSE_BASE = "https://api.meta.ai/v1"
-MUSE_MODEL = os.getenv("MUSE_MODEL", "muse-spark-1.3")
+MUSE_MODEL = os.getenv("MUSE_MODEL", "muse-wonder-1.0")
 MUSE_ASR_MODEL = os.getenv("MUSE_ASR_MODEL", "muse-voice-transcribe-1.0")
 
 
@@ -142,7 +142,7 @@ def _muse_analyze(image_bytes: bytes) -> dict:
     }]
     last = None
     response = None
-    for model in dict.fromkeys([MUSE_MODEL, "muse-spark-1.2", "muse-spark-1.1"]):
+    for model in dict.fromkeys([MUSE_MODEL, "muse-wonder-1.0", "muse-spark-1.3", "muse-spark-1.2"]):
         try:
             response = client.chat.completions.create(
                 model=model, messages=messages,
