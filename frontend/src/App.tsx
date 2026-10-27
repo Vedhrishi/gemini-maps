@@ -33,7 +33,10 @@ type Tab = 'map' | 'report' | 'list' | 'nav'
 type Toast = { id: string; text: string; type: 'info' | 'success' | 'warn' | 'danger' }
 
 export default function App() {
-  const [booting, setBooting] = useState(true)
+  const [booting, setBooting] = useState(() => {
+    // returning visitors skip the splash: the map is the first thing they see
+    try { const t = Number(localStorage.getItem('gm-booted') || 0); return !(t && Date.now() - t < 12 * 3600_000) } catch { return true }
+  })
   const [reports, setReports] = useState<HazardReport[]>([])
   const [activeTab, setActiveTab] = useState<Tab>('map')
   const [focusId, setFocusId] = useState<string | null>(null)
@@ -478,7 +481,7 @@ export default function App() {
   const criticals = reports.filter(r => r.severity === 'critical').length
   const highs = reports.filter(r => r.severity === 'high').length
 
-  if (booting) return <BootSequence onDone={() => setBooting(false)} />
+  if (booting) return <BootSequence onDone={() => { try { localStorage.setItem('gm-booted', String(Date.now())) } catch {} setBooting(false) }} />
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden', position: 'relative' }}>

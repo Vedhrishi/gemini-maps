@@ -1,6 +1,11 @@
 import axios from 'axios'
 
 export const API_URL = import.meta.env.VITE_API_URL || 'https://gemini-maps-api.onrender.com'
+/** The free backend sleeps when idle. Waking it now overlaps its start-up with the splash and first paint. */
+if (typeof window !== 'undefined') {
+  const wake = () => { fetch(`${API_URL}/health`, { mode: 'cors', cache: 'no-store' }).catch(() => {}) }
+  if ('requestIdleCallback' in window) (window as any).requestIdleCallback(wake, { timeout: 1500 }); else setTimeout(wake, 300)
+}
 export const WS_URL = API_URL.replace('https://', 'wss://').replace('http://', 'ws://')
 
 export interface HazardReport {

@@ -7,11 +7,9 @@ import { useEffect, useState } from 'react'
  */
 
 const LINES = [
-  'Initializing hazard network',
-  'Acquiring GPS fix',
-  'Connecting to Gemini Vision',
-  'Opening realtime channel',
-  'Calibrating voice recognition',
+  'Loading the map',
+  'Finding your location',
+  'Connecting to live reports',
 ]
 
 export function BootSequence({ onDone }: { onDone: () => void }) {
@@ -22,7 +20,7 @@ export function BootSequence({ onDone }: { onDone: () => void }) {
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (reduced) { onDone(); return }
 
-    const perStep = 260
+    const perStep = 220
     const timers: ReturnType<typeof setTimeout>[] = []
 
     LINES.forEach((_, i) => {
