@@ -25,5 +25,5 @@ services:
       - key: SEED_DEMO
         value: "0"          # never seed sample reports
       - key: MUSE_API_KEY
-        sync: false          # Add tomorrow when Meta API key arrives
+        sync: false          # Meta Model API key (set this and AI_PROVIDER=muse)
     healthCheckPath: /health

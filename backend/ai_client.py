@@ -100,50 +100,75 @@ def _gemini_transcribe(audio_bytes: bytes, mime_type: str = "audio/webm") -> str
     ).strip()
 
 
-# ── Muse provider (ready for tomorrow) ───────────────────────────────────────
+# ── Meta Model API (Muse) provider ───────────────────────────────────────────
+# Verified against https://dev.meta.ai/docs : OpenAI-compatible Chat Completions
+# at https://api.meta.ai/v1, vision via image_url data URIs, and a separate
+# /asr/transcribe route for Muse Voice Transcribe (WAV only, multipart).
+
+MUSE_BASE = "https://api.meta.ai/v1"
+MUSE_MODEL = os.getenv("MUSE_MODEL", "muse-spark-1.3")
+MUSE_ASR_MODEL = os.getenv("MUSE_ASR_MODEL", "muse-voice-transcribe-1.0")
+
+
+def _muse_key() -> str:
+    return os.environ.get("MUSE_API_KEY") or os.environ["MODEL_API_KEY"]
+
 
 def _muse_analyze(image_bytes: bytes) -> dict:
-    """
-    Meta Muse Spark 1.3 — vision analysis.
-    Activated when AI_PROVIDER=muse and MUSE_API_KEY is set.
-    """
+    """Muse Spark vision: classify a road photo into the hazard schema."""
     from openai import OpenAI
-    client = OpenAI(
-        api_key=os.environ["MUSE_API_KEY"],
-        base_url="https://api.meta.ai/v1"
-    )
-    b64 = base64.b64encode(image_bytes).decode()
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    if max(img.size) > 1280:
+        r = 1280 / max(img.size)
+        img = img.resize((int(img.size[0] * r), int(img.size[1] * r)), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    client = OpenAI(api_key=_muse_key(), base_url=MUSE_BASE, timeout=45)
     response = client.chat.completions.create(
-        model="muse-spark-1.3",
+        model=MUSE_MODEL,
         messages=[{
             "role": "user",
             "content": [
                 {"type": "text", "text": ANALYSIS_PROMPT},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
-            ]
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+            ],
         }],
-        max_tokens=512,
+        max_completion_tokens=2048,  # Muse Spark always reasons; leave room for the answer
     )
-    return _parse_json(response.choices[0].message.content)
+    text = response.choices[0].message.content or ""
+    m = re.search(r"\{.*\}", text, re.S)
+    return _parse_json(m.group(0) if m else text)
+
+
+def _to_wav(audio_bytes: bytes, mime_type: str) -> bytes:
+    """Muse Voice Transcribe accepts WAV only; browsers record WebM/MP4."""
+    if "wav" in mime_type:
+        return audio_bytes
+    import subprocess, imageio_ffmpeg
+    p = subprocess.run(
+        [imageio_ffmpeg.get_ffmpeg_exe(), "-v", "error", "-i", "pipe:0",
+         "-ac", "1", "-ar", "16000", "-f", "wav", "pipe:1"],
+        input=audio_bytes, capture_output=True, timeout=30,
+    )
+    if p.returncode != 0 or not p.stdout:
+        raise RuntimeError("audio conversion failed")
+    return p.stdout
 
 
 def _muse_transcribe(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
-    """
-    Meta Muse Voice Transcribe 1.0
-    Activated when AI_PROVIDER=muse.
-    """
-    from openai import OpenAI
-    client = OpenAI(
-        api_key=os.environ["MUSE_API_KEY"],
-        base_url="https://api.meta.ai/v1"
+    """Muse Voice Transcribe 1.0 via POST /v1/asr/transcribe."""
+    import httpx
+    wav = _to_wav(audio_bytes, mime_type)
+    req = json.dumps({"model": MUSE_ASR_MODEL, "audioEncoding": "WAV", "mode": "PUSH_TO_TALK"})
+    r = httpx.post(
+        f"{MUSE_BASE}/asr/transcribe",
+        headers={"Authorization": f"Bearer {_muse_key()}", "Accept": "application/json"},
+        files={"request": (None, req, "application/json"), "audio": ("audio.wav", wav, "audio/wav")},
+        timeout=40,
     )
-    audio_file = io.BytesIO(audio_bytes)
-    audio_file.name = "audio.webm"
-    response = client.audio.transcriptions.create(
-        model="muse-voice-transcribe-1.0",
-        file=audio_file,
-    )
-    return response.text.strip()
+    r.raise_for_status()
+    return (r.json().get("transcript") or "").strip()
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
