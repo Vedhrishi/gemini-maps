@@ -3,7 +3,7 @@ from fastapi import FastAPI, UploadFile, File, Form, WebSocket, WebSocketDisconn
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Request
 from fastapi.concurrency import run_in_threadpool
-import os, uuid, math, time, asyncio
+import io, os, uuid, math, time, asyncio
 import httpx
 from collections import defaultdict, deque
 from datetime import datetime, timezone
@@ -403,6 +403,20 @@ async def analyze(
     _save_report(report)
     await ws_manager.broadcast({"event": "new_hazard", "report": report})
     return {"is_road_hazard": True, "report": report, "merged": False}
+
+
+@app.get("/api/ai-check")
+async def ai_check(request: Request):
+    """Diagnostic: runs one tiny vision call and reports the provider's error (never the key)."""
+    _limit(request, "aicheck", 6)
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 64), (128, 128, 128)).save(buf, format="JPEG")
+    try:
+        out = await run_in_threadpool(analyze_image_sync, buf.getvalue())
+        return {"ok": True, "provider": active_provider(), "sample": out}
+    except Exception as e:
+        return {"ok": False, "provider": active_provider(), "error": f"{type(e).__name__}: {str(e)[:400]}"}
 
 
 @app.post("/api/transcribe")
