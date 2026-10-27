@@ -4,7 +4,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { analyzeImage, HazardReport } from '../lib/api'
+import { analyzeImage, HazardReport, fetchProvider, providerLabel } from '../lib/api'
 import { HAZARD_LABELS, SEVERITY_COLORS } from '../lib/mapUtils'
 import { speak } from '../hooks/useVoice'
 
@@ -25,6 +25,8 @@ const SEV_BG: Record<string, string> = {
 }
 
 export function ReportPanel({ userLat, userLng, triggerCapture, onCaptureHandled, onNewReport }: Props) {
+  const [provider, setProvider] = useState('')
+  useEffect(() => { fetchProvider().then(setProvider) }, [])
   const [mode, setMode] = useState<'idle' | 'camera' | 'preview' | 'analyzing' | 'result'>('idle')
   const [imgBlob, setImgBlob] = useState<Blob | null>(null)
   const [imgUrl, setImgUrl] = useState<string | null>(null)
@@ -442,7 +444,7 @@ export function ReportPanel({ userLat, userLng, triggerCapture, onCaptureHandled
                   alignItems: 'center', justifyContent: 'center', gap: 8,
                 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>
-                    Analyzing with Gemini Vision…
+                    Analyzing with {providerLabel(provider)}…
                   </div>
                 </div>
               </div>

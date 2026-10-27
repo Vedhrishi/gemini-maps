@@ -9,7 +9,7 @@ services:
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: AI_PROVIDER
-        value: gemini
+        value: auto          # Meta Muse when MUSE_API_KEY is set, else Gemini
       - key: GEMINI_API_KEY
         sync: false          # Set manually in Render dashboard
       - key: SUPABASE_URL
@@ -25,5 +25,5 @@ services:
       - key: SEED_DEMO
         value: "0"          # never seed sample reports
       - key: MUSE_API_KEY
-        sync: false          # Meta Model API key (set this and AI_PROVIDER=muse)
+        sync: false          # Meta Model API key. With AI_PROVIDER=auto this switches the app to Muse
     healthCheckPath: /health

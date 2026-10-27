@@ -66,3 +66,15 @@ export async function upvoteReport(id: string): Promise<number> {
   const { data } = await axios.post<{ upvotes?: number }>(`${API_URL}/api/reports/${id}/upvote`)
   return typeof data?.upvotes === 'number' ? data.upvotes : 0
 }
+
+
+/** Which AI model the backend is really using ("gemini" | "muse" | "mock"). */
+export async function fetchProvider(): Promise<string> {
+  try {
+    const r = await fetch(`${API_URL}/health`, { mode: 'cors', cache: 'no-store' })
+    const j = await r.json()
+    return String(j.provider || '')
+  } catch { return '' }
+}
+
+export const providerLabel = (p: string) => (p === 'muse' ? 'Muse Spark' : p === 'gemini' ? 'Gemini Vision' : 'AI Vision')

@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { HazardReport } from '../lib/api'
+import { HazardReport, fetchProvider, providerLabel } from '../lib/api'
 import { AnimatedCounter } from './AnimatedCounter'
 
 interface Props {
@@ -106,6 +106,8 @@ function Divider() {
 }
 
 export function TelemetryBar({ reports, reportRate, userLat, userLng, compact }: Props) {
+  const [provider, setProvider] = useState('')
+  useEffect(() => { fetchProvider().then(setProvider) }, [])
   const [uptime, setUptime] = useState(0)
   const [history, setHistory] = useState<number[]>(Array(24).fill(0))
   const startRef = useRef(Date.now())
@@ -248,7 +250,7 @@ export function TelemetryBar({ reports, reportRate, userLat, userLng, compact }:
           <span style={{
             fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
             color: 'var(--accent)', fontFamily: 'var(--font2)',
-          }}>GEMINI VISION</span>
+          }}>{providerLabel(provider).toUpperCase()}</span>
         </div>
       </div>
     </div>

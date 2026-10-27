@@ -13,7 +13,7 @@ from typing import List
 import json
 
 from places import gazetteer, detail, load_in_background
-from ai_client import analyze_image_sync, transcribe_audio_sync
+from ai_client import analyze_image_sync, transcribe_audio_sync, active_provider
 
 load_dotenv()
 
@@ -248,7 +248,7 @@ def _upvote(report_id: str) -> int:
 async def health():
     return {
         "status": "ok",
-        "provider": os.getenv("AI_PROVIDER", "gemini"),
+        "provider": active_provider(),
         "supabase": bool(supabase_client),
         "connections": len(ws_manager.connections),
         "reports": len(_reports_store),

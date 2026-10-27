@@ -11,7 +11,15 @@ import os, io, json, re, base64, time
 from enum import Enum
 from PIL import Image
 
-PROVIDER = os.getenv("AI_PROVIDER", "gemini")  # "gemini" | "muse"
+PROVIDER = os.getenv("AI_PROVIDER", "auto")  # "auto" | "muse" | "gemini" | "mock"
+
+
+def active_provider() -> str:
+    """auto = Meta Muse whenever a Meta key is configured, otherwise Gemini."""
+    p = os.getenv("AI_PROVIDER", PROVIDER)
+    if p == "auto":
+        return "muse" if (os.getenv("MUSE_API_KEY") or os.getenv("MODEL_API_KEY")) else "gemini"
+    return p
 
 
 # ── Shared output schema ──────────────────────────────────────────────────────
@@ -187,7 +195,7 @@ def _mock_analyze(image_bytes: bytes) -> dict:
 
 
 def analyze_image_sync(image_bytes: bytes) -> dict:
-    p = os.getenv("AI_PROVIDER", PROVIDER)
+    p = active_provider()
     if p == "muse":
         return _muse_analyze(image_bytes)
     if p == "mock":
@@ -196,7 +204,7 @@ def analyze_image_sync(image_bytes: bytes) -> dict:
 
 
 def transcribe_audio_sync(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
-    p = os.getenv("AI_PROVIDER", PROVIDER)
+    p = active_provider()
     if p == "muse":
         return _muse_transcribe(audio_bytes, mime_type)
     if p == "mock":
