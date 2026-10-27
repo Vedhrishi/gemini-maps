@@ -21,6 +21,7 @@ import { useNavigation } from './hooks/useNavigation'
 import { haversine, searchPlaces, DEMO_TRIPS, divergencePoint, fetchRoutes, pointAt, Route, fmtKm, fmtDur, clock } from './lib/routing'
 import { VEHICLES, money } from './lib/fuel'
 import { trafficSpeech } from './lib/traffic'
+import { catFromSpeech, findNearest, fmtDist } from './lib/nearest'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useVoice, speak } from './hooks/useVoice'
 import { useLocation, lastKnown } from './hooks/useLocation'
@@ -319,7 +320,7 @@ export default function App() {
         const u = userPosRef.current
         searchPlaces(dest, u).then(r => {
           if (!r[0]) { speak(`I couldn't find ${dest}`); toast(`No place found for "${dest}"`, 'warn'); return }
-          navRef.current.plan({ name: loc.manual?.name ?? (u.real ? 'My location' : 'HITEC City'), sub: '', lat: u.lat, lng: u.lng }, r[0])
+          navRef.current.plan({ name: loc.manual?.name ?? 'My location', sub: '', lat: u.lat, lng: u.lng }, r[0])
           setActiveTab('map')
           toast(`🧭 Routing to ${r[0].name}`, 'info')
         }).catch(() => toast('Place search unavailable', 'warn'))
@@ -362,6 +363,48 @@ export default function App() {
         else say(`${reportsRef.current.length} hazards are reported around you`)
         break
       }
+      case 'NEAREST': {
+        const cat = catFromSpeech(raw ?? '')
+        if (!cat) { say('What are you looking for? Try nearest petrol pump, restaurant, ATM or hospital.'); break }
+        const u = userPosRef.current
+        if (!u.real) { say('I need your location first. Allow location access or pick it on the map.'); break }
+        speak(`Looking for the nearest ${cat.say}`)
+        findNearest(cat, u).then(hits => {
+          const h = hits[0]
+          if (!h) { say(`I couldn't find a ${cat.say} near you.`); return }
+          const more = hits[1] ? ` Next closest is ${hits[1].name}, ${fmtDist(hits[1].km)} away.` : ''
+          say(`Nearest ${cat.say} is ${h.name}, ${fmtDist(h.km)} away. Routing you there.${more}`)
+          navRef.current.plan({ name: loc.manual?.name ?? 'My location', sub: '', lat: u.lat, lng: u.lng }, h)
+          setActiveTab('map')
+        }).catch(() => say('Search is unavailable right now.'))
+        break
+      }
+      case 'LOCATE': {
+        const u = userPosRef.current
+        setActiveTab('map'); window.dispatchEvent(new CustomEvent('gm:map', { detail: 'locate' }))
+        say(u.real || loc.manual ? `You are ${loc.manual ? 'at ' + loc.manual.name : 'here'}. I have centred the map on you.` : 'I do not have your location yet. Allow location access, or pick it on the map.')
+        break
+      }
+      case 'ASK_TRAFFIC':
+        if (n.current) speak(trafficSpeech(n.current.route, n.to?.name ?? 'your destination', n.current.hazards.length))
+        else say('Plan a route and I will tell you about the traffic.')
+        break
+      case 'ROUTE_PICK': {
+        if (n.options.length < 2) { say(n.options.length ? 'There is only one route to this place.' : 'Plan a route first.'); break }
+        const t = (raw ?? '').toLowerCase()
+        const idx = /safe|hazard/.test(t) ? n.options.reduce((b, o, i, a) => o.hazards.length < a[b].hazards.length ? i : b, 0)
+          : /fast|quick|short/.test(t) ? n.options.reduce((b, o, i, a) => o.route.duration < a[b].route.duration ? i : b, 0)
+          : /two|second|2|other|alternative/.test(t) ? 1 : /three|3/.test(t) ? Math.min(2, n.options.length - 1) : 0
+        n.choose(idx); say(`Route ${idx + 1} selected. ${fmtDur(n.options[idx].route.duration)}, ${n.options[idx].hazards.length} reported hazards.`)
+        break
+      }
+      case 'REROUTE':
+        if (driving) { window.dispatchEvent(new CustomEvent('gm:guardian')); say('Guardian is checking for a better road.') }
+        else if (n.options.length > 1) { const i = (n.selected + 1) % n.options.length; n.choose(i); say(`Switched to route ${i + 1}.`) }
+        else say(n.current ? 'There is no other route to this place.' : 'Plan a route first.')
+        break
+      case 'REPEAT':
+        if (n.current && n.to) speak(trafficSpeech(n.current.route, n.to.name, n.current.hazards.length)); break
       case 'ASK_COUNT': say(`${reportsRef.current.length} hazards reported`); break
       case 'HELP': say('Try: navigate to a place, start trip, how far, speed limit, any hazards ahead, report pothole, zoom in, or street view.'); break
       case 'REPORT_HAZARD': setVoiceTrigger(true); setActiveTab('report'); break

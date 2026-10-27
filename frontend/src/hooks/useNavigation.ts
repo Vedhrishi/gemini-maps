@@ -75,6 +75,14 @@ export function useNavigation({ reports, toast, speak }: Deps) {
   // Safe-reroute guards: no flip-flopping, no runaway detours
   const rerouteStats = useRef({ count: 0, last: 0 })
   const rerouting = useRef(false)
+  // "Reroute" by voice or button: ask the Guardian to re-check the road ahead right now
+  const [gTick, setGTick] = useState(0)
+  const gSeen = useRef(0)
+  useEffect(() => {
+    const on = () => { knownHazards.current.clear(); setGTick(t => t + 1) }
+    window.addEventListener('gm:guardian', on)
+    return () => window.removeEventListener('gm:guardian', on)
+  }, [])
   const reportsRef = useRef(reports)
   const vehicleIdRef = useRef('hatch')
   reportsRef.current = reports
@@ -324,13 +332,18 @@ export function useNavigation({ reports, toast, speak }: Deps) {
   // telling you why; if not, it warns you and keeps the current route.
   useEffect(() => {
     if (status !== 'trip' || !current || !trip || !to || rerouting.current) return
+    const manual = gTick !== gSeen.current
+    gSeen.current = gTick
     const fresh = current.hazards.filter(h => {
       const d = h.at - traveled
       return !knownHazards.current.has(h.report.id)
-        && (h.report.severity === 'critical' || h.report.severity === 'high')
-        && d > 250 && d < 6000
+        && (manual || h.report.severity === 'critical' || h.report.severity === 'high')
+        && d > (manual ? 50 : 250) && d < 6000
     })
-    if (fresh.length === 0) return
+    if (fresh.length === 0) {
+      if (manual) { toast('🛡 Guardian: the road ahead is clear of reports', 'success'); speak('The road ahead is clear of reports.') }
+      return
+    }
 
     const hz = fresh[0]
     fresh.forEach(f => knownHazards.current.add(f.report.id))
@@ -412,7 +425,7 @@ export function useNavigation({ reports, toast, speak }: Deps) {
       rerouting.current = false
       setGuardian('watching')
     })
-  }, [traveled, status, current, trip, to, toast, speak, log])
+  }, [traveled, status, current, trip, to, toast, speak, log, gTick])
 
   // ── Spoken guidance + arrival ────────────────────────────────────────────
   useEffect(() => {

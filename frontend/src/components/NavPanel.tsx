@@ -6,6 +6,7 @@
 import { addUserPlace } from '../lib/userPlaces'
 import { LEVEL_COLOR, LEVEL_LABEL } from '../lib/traffic'
 import { useEffect, useRef, useState } from 'react'
+import { NEAR_CATS, findNearest, fmtDist, NearCat, NearHit } from '../lib/nearest'
 import { Nav } from '../hooks/useNavigation'
 import { VEHICLES, money, sym, PRICE_DATE } from '../lib/fuel'
 import {
@@ -166,9 +167,18 @@ export function NavPanel({ nav, userPos, locStatus, onRequestLocation, onStartLi
   const [showSteps, setShowSteps] = useState(false)
   const [showFuel, setShowFuel] = useState(false)
   const [origin, setOrigin] = useState<Place | null>(null)
+  const [nearCat, setNearCat] = useState<NearCat | null>(null)
+  const [nearHits, setNearHits] = useState<NearHit[] | null>(null)
+  const nearSeq = useRef(0)
+  const showNear = (c: NearCat) => {
+    if (nearCat?.id === c.id) { setNearCat(null); setNearHits(null); return }
+    const seq = ++nearSeq.current
+    setNearCat(c); setNearHits(null)
+    findNearest(c, userPos, 6).then(h => { if (seq === nearSeq.current) setNearHits(h) }).catch(() => { if (seq === nearSeq.current) setNearHits([]) })
+  }
 
   const here: Place = {
-    name: manualName ?? (userPos.real ? 'My location' : 'HITEC City, Hyderabad'),
+    name: manualName ?? 'My location',
     sub: '', lat: userPos.lat, lng: userPos.lng,
   }
   const from = origin ?? nav.from ?? here
@@ -240,6 +250,42 @@ export function NavPanel({ nav, userPos, locStatus, onRequestLocation, onStartLi
           onPick={p => go(p)}
           onClear={nav.clear}
         />
+      </div>
+
+      {/* Nearby: the most asked searches, one tap */}
+      <div>
+        <div style={{ ...label, marginBottom: 7 }}>Nearby</div>
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 3, scrollbarWidth: 'none' }}>
+          {NEAR_CATS.map(c => {
+            const on = nearCat?.id === c.id
+            return (
+              <button key={c.id} onClick={() => showNear(c)} style={{
+                flexShrink: 0, padding: '7px 11px', borderRadius: 9, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+                background: on ? 'rgba(0,212,255,.14)' : 'rgba(255,255,255,.03)',
+                border: `1px solid ${on ? 'rgba(0,212,255,.5)' : 'rgba(255,255,255,.08)'}`, color: on ? 'var(--accent)' : 'var(--text2)',
+              }}>{c.icon} {c.label}</button>
+            )
+          })}
+        </div>
+        {nearCat && (
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {nearHits === null && <div style={{ fontSize: 12.5, color: 'var(--text3)' }}>Finding the closest {nearCat.say}…</div>}
+            {nearHits?.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text3)' }}>No {nearCat.say} found within range. Try moving the map or picking another location.</div>}
+            {nearHits?.map((h, i) => (
+              <button key={i} onClick={() => go(h)} style={{
+                display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', padding: '9px 11px', borderRadius: 10,
+                background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.09)', color: 'var(--text)',
+              }}>
+                <span style={{ fontSize: 18 }}>{nearCat.icon}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.name}</span>
+                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.sub}</span>
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>{h.km < 1 ? `${Math.round(h.km * 10) * 100} m` : `${h.km.toFixed(1)} km`}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Vehicle */}

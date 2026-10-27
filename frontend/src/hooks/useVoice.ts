@@ -23,6 +23,9 @@ export const VOICE_COMMANDS: { phrase: string; does: string }[] = [
   { phrase: 'navigate to <place>', does: 'Plan a route anywhere' },
   { phrase: 'start trip · stop trip · pause · resume', does: 'Drive controls' },
   { phrase: 'how far · how long · when do I arrive', does: 'Trip answers' },
+  { phrase: "how's the traffic · where am I", does: 'Traffic and your location' },
+  { phrase: 'nearest petrol pump · restaurant · ATM · hospital', does: 'Find and route to the closest one' },
+  { phrase: 'fastest route · safer route · reroute', does: 'Pick or re-plan a route' },
   { phrase: "what's the speed limit", does: 'Limit and your speed' },
   { phrase: 'any hazards ahead', does: 'Road ahead' },
   { phrase: 'how much fuel', does: 'Fuel cost estimate' },
@@ -46,7 +49,17 @@ export function parseCommand(text: string): VoiceCommand {
   }
   const t = text.toLowerCase().replace(/[.?!,]/g, ' ').replace(/\s+/g, ' ').trim()
   const has = (re: RegExp) => re.test(t)
+  if (has(/\b(nearest|nearby|closest|near me|around me)\b|where can i (eat|get|find|fill)|i('m| am) (hungry|low on (fuel|petrol|diesel))|i need (petrol|fuel|diesel|a (doctor|hospital|atm|mechanic))/)) return 'NEAREST'
+  if (has(/where am i|my (current )?location|locate me|find me|show me on the map|centre on me|center on me/)) return 'LOCATE'
+  if (has(/^(show|open|go to|switch to) (the )?(report|map|live map|feed|list|navigation|directions)( tab| screen)?$/)) {
+    return /report/.test(t) ? 'TAB_REPORT' : /feed|list/.test(t) ? 'TAB_LIST' : /navigation|directions/.test(t) ? 'TAB_NAV' : 'TAB_MAP'
+  }
+  if (has(/traffic/)) return 'ASK_TRAFFIC'
+  if (has(/(re-?route|another route|different route|avoid (the )?hazards?|safer (way|route)|find a better)/)) return 'REROUTE'
+  if (has(/(fastest|quickest|shortest|safest|safer|least hazards?|alternative|second|other) (route|way|option)|route (one|two|three|1|2|3)\b/)) return 'ROUTE_PICK'
   if (has(/\b(navigate to|take me to|directions to|drive to|route to|go to|find)\b/)) return 'NAVIGATE'
+  if (has(/\b(repeat|say that again|again)\b/)) return 'REPEAT'
+  if (has(/\bmute\b|be quiet|silence/)) return 'VOICE_OFF'
   if (has(/\bhelp\b|what can i say|what can you do/)) return 'HELP'
   if (has(/speed limit|how fast|my speed/)) return 'ASK_LIMIT'
   if (has(/how (far|many (km|kilometres|kilometers|miles))|distance (left|remaining)|km left/)) return 'ASK_DISTANCE'

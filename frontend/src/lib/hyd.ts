@@ -99,3 +99,12 @@ export async function searchDetail(q: string, near: { lat: number; lng: number }
   }
   return out
 }
+
+export interface NearRow { name: string; sub: string; lat: number; lng: number; k: string }
+/** Every place in the cells around a point (for "nearest petrol pump" style lookups). */
+export async function rowsNear(near: { lat: number; lng: number }): Promise<NearRow[]> {
+  if (!inIndia(near.lat, near.lng)) return []
+  const idx = await getIndex('cells')
+  const data = await Promise.all(cellsAround(near.lat, near.lng, idx).map(k => loadCell(`cells/${k}`).catch(() => [] as Row[])))
+  return data.flat()
+}
