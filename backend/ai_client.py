@@ -133,17 +133,26 @@ def _muse_analyze(image_bytes: bytes) -> dict:
     img.save(buf, format="JPEG", quality=85)
     b64 = base64.b64encode(buf.getvalue()).decode()
     client = OpenAI(api_key=_muse_key(), base_url=MUSE_BASE, timeout=45)
-    response = client.chat.completions.create(
-        model=MUSE_MODEL,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": ANALYSIS_PROMPT},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-            ],
-        }],
-        max_completion_tokens=2048,  # Muse Spark always reasons; leave room for the answer
-    )
+    messages = [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": ANALYSIS_PROMPT},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+        ],
+    }]
+    last = None
+    response = None
+    for model in dict.fromkeys([MUSE_MODEL, "muse-spark-1.2", "muse-spark-1.1"]):
+        try:
+            response = client.chat.completions.create(
+                model=model, messages=messages,
+                max_completion_tokens=2048,  # Muse Spark always reasons; leave room for the answer
+            )
+            break
+        except Exception as e:  # model not enabled for this key: try the next version
+            last = f"{model}: {type(e).__name__}: {str(e)[:200]}"
+    if response is None:
+        raise RuntimeError(last)
     text = response.choices[0].message.content or ""
     m = re.search(r"\{.*\}", text, re.S)
     return _parse_json(m.group(0) if m else text)
