@@ -1,4 +1,4 @@
-const V = 'gm-v4'
+const V = 'gm-v5'
 const TILES = 'gm-tiles-v1'
 const DATA = 'gm-data-v2' // place cells and street files: bump the number whenever the data is rebuilt
 const SHELL = ['./', 'icon-192.png', 'manifest.webmanifest']
