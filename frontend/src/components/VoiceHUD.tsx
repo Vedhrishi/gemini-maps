@@ -1,112 +1,91 @@
 /**
- * Floating voice HUD over the map.
- * Shows live transcript while speaking, and the command list otherwise —
- * so what the app responds to is discoverable without a manual.
+ * Floating voice pill over the map. Shows what the voice engine is doing right now
+ * and, in tap-to-talk mode (iPhone), is itself the button you tap to speak.
  */
+import type { VoiceStatus } from '../hooks/useVoice'
+
 export function VoiceHUD({
-  listening,
+  status,
   transcript,
   level,
   enabled,
-  supported,
+  onTalk,
 }: {
-  listening: boolean
+  status: VoiceStatus
   transcript: string
   level: number
   enabled: boolean
-  supported: boolean
+  onTalk?: () => void
 }) {
   if (!enabled) return null
+  const words = transcript.trim()
+  const live = status === 'listening' || status === 'hearing' || status === 'recording'
+  const tappable = !!onTalk && (status === 'ready' || status === 'recording')
 
-  const speaking = transcript.trim().length > 0
-
-  if (!supported) {
-    return (
-      <Shell tone="warn">
-        <span style={{ fontSize: 12 }}>
-          Voice needs Chrome or Edge — use <strong style={{ color: '#ffaa00' }}>Open Camera</strong> instead
-        </span>
-      </Shell>
-    )
+  let tone: 'idle' | 'live' | 'active' | 'warn' = live ? 'live' : 'idle'
+  let text: React.ReactNode
+  if (status === 'unsupported') {
+    tone = 'warn'
+    text = <>Voice isn't available in this browser. Use <b style={{ color: '#ffaa00' }}>Open Camera</b> to report.</>
+  } else if (status === 'blocked') {
+    tone = 'warn'
+    text = <>Microphone is blocked. Allow it in your browser settings to use voice.</>
+  } else if (words) {
+    tone = 'active'
+    text = <>“<span style={{ color: '#00ff88' }}>{words}</span>”</>
+  } else if (status === 'recording') {
+    text = <span style={{ color: '#cfe8ff', whiteSpace: 'nowrap' }}>Listening… tap to finish</span>
+  } else if (status === 'thinking') {
+    text = <span style={{ color: '#7a9cc0' }}>Understanding…</span>
+  } else if (status === 'ready') {
+    text = <span style={{ color: '#cfe8ff', whiteSpace: 'nowrap' }}>Tap to talk</span>
+  } else if (live) {
+    text = <span style={{ color: '#7a9cc0', whiteSpace: 'nowrap' }}>Say <b style={{ color: '#00d4ff' }}>“Hey Meta”</b></span>
+  } else {
+    text = <span style={{ color: '#5e82a6' }}>Starting voice…</span>
   }
 
-  return (
-    <Shell tone={speaking ? 'active' : listening ? 'live' : 'idle'}>
-      {/* Waveform meter */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2.5, height: 18 }}>
-        {[0, 1, 2, 3, 4].map(i => {
-          const base = [0.35, 0.65, 1, 0.65, 0.35][i]
-          const h = listening ? 4 + base * (4 + level * 13) : 3
-          return (
-            <span
-              key={i}
-              style={{
-                width: 2.5, height: h, borderRadius: 2,
-                background: speaking ? '#00ff88' : listening ? '#00d4ff' : '#1e3550',
-                transition: 'height 0.12s ease, background 0.2s ease',
-                animation: listening && !speaking
-                  ? `wave 1.1s ease-in-out ${i * 0.12}s infinite`
-                  : 'none',
-              }}
-            />
-          )
-        })}
-      </div>
+  const bars = (
+    <div aria-hidden style={{ display: 'flex', alignItems: 'center', gap: 2.5, height: 18 }}>
+      {[0.35, 0.65, 1, 0.65, 0.35].map((base, i) => (
+        <span key={i} style={{
+          width: 2.5, borderRadius: 2,
+          height: live ? 4 + base * (4 + level * 13) : status === 'thinking' ? 6 : 3,
+          background: words ? '#00ff88' : live ? '#00d4ff' : status === 'thinking' ? '#7a9cc0' : '#1e3550',
+          transition: 'height 0.1s ease, background 0.2s ease',
+          animation: (live && !words) || status === 'thinking' ? `wave 1.1s ease-in-out ${i * 0.12}s infinite` : 'none',
+        }} />
+      ))}
+    </div>
+  )
 
-      {speaking ? (
-        <span style={{ fontSize: 12.5, color: '#e8f4ff' }}>
-          “<span style={{ color: '#00ff88' }}>{transcript}</span>”
-        </span>
-      ) : listening ? (
-        <span style={{ fontSize: 12, color: '#7a9cc0', whiteSpace: 'nowrap' }}>
-          Say <span style={{ color: '#00d4ff', fontWeight: 600 }}>“Hey Meta”</span>
-        </span>
-      ) : (
-        <span style={{ fontSize: 12, color: '#5e82a6' }}>Voice paused</span>
-      )}
+  return (
+    <Shell tone={tone} onClick={tappable ? onTalk : undefined}>
+      {tappable && status === 'ready' ? <span aria-hidden style={{ fontSize: 15 }}>🎙</span> : bars}
+      <span style={{ fontSize: 12.5, color: '#e8f4ff' }}>{text}</span>
     </Shell>
   )
 }
 
-function Shell({
-  children,
-  tone,
-}: {
+function Shell({ children, tone, onClick }: {
   children: React.ReactNode
   tone: 'idle' | 'live' | 'active' | 'warn'
+  onClick?: () => void
 }) {
-  const border = {
-    idle: 'rgba(0,212,255,0.12)',
-    live: 'rgba(0,212,255,0.35)',
-    active: 'rgba(0,255,136,0.5)',
-    warn: 'rgba(255,170,0,0.35)',
-  }[tone]
-  const glow = {
-    idle: 'none',
-    live: '0 0 24px rgba(0,212,255,0.16)',
-    active: '0 0 32px rgba(0,255,136,0.22)',
-    warn: 'none',
-  }[tone]
-
-  return (
-    <div style={{
-      position: 'absolute', bottom: 18, left: '50%', transform: 'translateX(-50%)',
-      background: 'rgba(2,6,22,0.9)', 
-      border: `1px solid ${border}`, boxShadow: glow,
-      borderRadius: 22, padding: '7px 14px',
-      display: 'flex', alignItems: 'center', gap: 13,
-      zIndex: 1000, pointerEvents: 'none',
-      maxWidth: 'min(70%, 420px)',
-      transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
-      animation: 'fadeIn 0.6s ease both',
-    }}>
-      {children}
-      <style>{`
-        @keyframes wave {
-          0%, 100% { transform: scaleY(0.6); }
-          50%      { transform: scaleY(1.25); }
-        }
-      `}</style>
-    </div>
-  )
+  const border = { idle: 'rgba(0,212,255,0.18)', live: 'rgba(0,212,255,0.45)', active: 'rgba(0,255,136,0.5)', warn: 'rgba(255,170,0,0.4)' }[tone]
+  const glow = { idle: 'none', live: '0 0 24px rgba(0,212,255,0.18)', active: '0 0 32px rgba(0,255,136,0.22)', warn: 'none' }[tone]
+  const style: React.CSSProperties = {
+    position: 'absolute', bottom: 'calc(18px + var(--sab, 0px))', left: '50%', transform: 'translateX(-50%)',
+    background: 'rgba(2,6,22,0.92)', border: `1px solid ${border}`, boxShadow: glow,
+    borderRadius: 22, padding: onClick ? '10px 18px' : '7px 14px',
+    display: 'flex', alignItems: 'center', gap: 12,
+    zIndex: 1000, pointerEvents: onClick ? 'auto' : 'none',
+    maxWidth: 'min(86%, 440px)', color: 'inherit', textAlign: 'left',
+    transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
+    animation: 'fadeIn 0.6s ease both',
+  }
+  const kf = <style>{`@keyframes wave { 0%, 100% { transform: scaleY(0.6); } 50% { transform: scaleY(1.25); } }`}</style>
+  return onClick
+    ? <button onClick={onClick} aria-label="Talk to Meta Maps" style={style}>{children}{kf}</button>
+    : <div role="status" aria-live="polite" style={style}>{children}{kf}</div>
 }

@@ -187,7 +187,7 @@ export function NavPanel({ nav, userPos, locStatus, onRequestLocation, onStartLi
   const go = (dest: Place, start: Place = from) => { nav.plan(start, dest); onShowMap() }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto', padding: 16, gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto', padding: '16px 16px calc(16px + var(--sab))', gap: 14 }}>
       <div>
         <div style={{ fontFamily: 'var(--font2)', fontWeight: 800, fontSize: 18, letterSpacing: '-.3px' }}>
           Navigate

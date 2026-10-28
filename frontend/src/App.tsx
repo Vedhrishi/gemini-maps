@@ -525,7 +525,7 @@ export default function App() {
     }
   }, [toast])
 
-  const { listening, supported, transcript, level } = useVoice({
+  const { listening, transcript, level, status: voiceStatus, mode: voiceMode, talk } = useVoice({
     onCommand: handleVoiceCommand,
     enabled: voiceEnabled && !booting,
   })
@@ -584,7 +584,8 @@ export default function App() {
       {/* ══ HEADER ══════════════════════════════════════════════════════ */}
       <header style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 16px', height: 58, gap: 12,
+        // home-screen app on iPhone: the header sits below the status bar and notch
+        padding: 'var(--sat) calc(16px + var(--sar)) 0 calc(16px + var(--sal))', height: 'calc(58px + var(--sat))', gap: 12,
         background: 'rgba(2,6,16,0.95)', backdropFilter: 'blur(40px)',
         borderBottom: '1px solid rgba(0,212,255,0.12)',
         flexShrink: 0, position: 'relative', zIndex: 200,
@@ -654,8 +655,12 @@ export default function App() {
           )}
 
           <button
-            onClick={() => setVoiceEnabled(v => !v)}
-            title="Toggle voice (V)"
+            onClick={() => {
+              if (voiceMode === 'push') { if (!voiceEnabled) setVoiceEnabled(true); void talk() } // tap to talk
+              else setVoiceEnabled(v => !v)
+            }}
+            aria-label={voiceMode === 'push' ? 'Talk' : voiceEnabled ? 'Turn voice off' : 'Turn voice on'}
+            title={voiceMode === 'push' ? 'Tap and speak' : 'Toggle voice (V)'}
             style={{
               background: listening ? 'rgba(0,212,255,0.1)' : voiceEnabled ? 'rgba(0,100,255,0.07)' : 'rgba(255,255,255,0.03)',
               border: `1px solid ${listening ? 'rgba(0,212,255,0.5)' : voiceEnabled ? 'rgba(0,100,255,0.2)' : 'rgba(255,255,255,0.08)'}`,
@@ -671,7 +676,9 @@ export default function App() {
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', margin: 'auto', position: 'absolute', inset: 0 }} />
               </span>
             ) : <span style={{ fontSize: 13 }}>🎙</span>}
-            {isDesktop && (listening ? 'LISTENING' : voiceEnabled ? 'VOICE ON' : 'VOICE OFF')}
+            {isDesktop && (voiceMode === 'push'
+              ? (voiceStatus === 'recording' ? 'LISTENING' : voiceStatus === 'thinking' ? 'THINKING' : 'TAP TO TALK')
+              : listening ? 'LISTENING' : voiceEnabled ? 'VOICE ON' : 'VOICE OFF')}
           </button>
 
           <button
@@ -770,7 +777,7 @@ export default function App() {
 
           {/* Emergency and share-my-location, one tap away when not driving */}
           {!nav.trip && (
-            <div style={{ position: 'absolute', left: 14, bottom: 120, zIndex: 6, display: 'flex', gap: 8 }}>
+            <div style={{ position: 'absolute', left: 14, bottom: 'calc(120px + var(--sab))', zIndex: 6, display: 'flex', gap: 8 }}>
               <button onClick={() => setShowSos(true)} aria-label="Emergency" title="Emergency numbers and share your location" style={{
                 height: 40, padding: '0 14px', borderRadius: 20, fontWeight: 800, fontSize: 13, letterSpacing: '.04em',
                 background: 'rgba(40,4,14,.92)', border: '1px solid rgba(255,51,85,.6)', color: '#ff5c77',
@@ -815,7 +822,7 @@ export default function App() {
 
           {/* 2D / 3D switch */}
           <div style={{
-            position: 'absolute', bottom: 78, right: 14, zIndex: 1001,
+            position: 'absolute', bottom: 'calc(78px + var(--sab))', right: 14, zIndex: 1001,
             display: !isDesktop && (nav.status === 'trip' || nav.status === 'arrived') ? 'none' : 'flex', gap: 4, background: 'rgba(2,6,22,.86)',
             border: '1px solid rgba(0,212,255,.16)',
             borderRadius: 10, padding: 4,
@@ -836,8 +843,8 @@ export default function App() {
           </div>
           {activeTab === 'map' && nav.status !== 'trip' && nav.status !== 'arrived' && (
             <VoiceHUD
-              listening={listening} transcript={transcript} level={level}
-              enabled={voiceEnabled} supported={supported}
+              status={voiceStatus} transcript={transcript} level={level}
+              enabled={voiceEnabled} onTalk={voiceMode === 'push' ? () => { void talk() } : undefined}
             />
           )}
         </div>

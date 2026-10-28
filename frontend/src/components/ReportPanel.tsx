@@ -235,7 +235,7 @@ export function ReportPanel({ userLat, userLng, triggerCapture, onCaptureHandled
         </div>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '16px 16px calc(16px + var(--sab))', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
         {/* ── IDLE ──────────────────────────────────────────── */}
         {mode === 'idle' && (

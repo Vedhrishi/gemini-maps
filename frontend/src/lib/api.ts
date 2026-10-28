@@ -53,8 +53,9 @@ export async function analyzeImage(
 
 export async function transcribeAudio(blob: Blob): Promise<string> {
   const form = new FormData()
-  form.append('file', blob, 'voice.webm')
-  const { data } = await axios.post<{ text: string }>(`${API_URL}/api/transcribe`, form)
+  const ext = /mp4|aac|m4a/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : /wav/.test(blob.type) ? 'wav' : 'webm'
+  form.append('file', blob, `voice.${ext}`)
+  const { data } = await axios.post<{ text: string }>(`${API_URL}/api/transcribe`, form, { timeout: 25000 })
   return data.text
 }
 

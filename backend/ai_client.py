@@ -114,7 +114,9 @@ GEMINI_AUDIO = ("audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg", "audio/fl
 
 VOICE_PROMPT = (
     "This is a short voice command spoken to a navigation app in India (English, possibly with an Indian accent "
-    "and Indian place names). Transcribe exactly what was said. Return only the words, no quotes, no notes. "
+    "and Indian place names). Commands often start with the wake phrase \"Hey Meta\" and include words like "
+    "navigate to, nearest, petrol pump, reroute, traffic, report pothole, share my location. "
+    "Transcribe exactly what was said. Return only the words, no quotes, no notes. "
     "If nothing intelligible was said, return an empty string."
 )
 

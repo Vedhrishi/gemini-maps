@@ -704,7 +704,7 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
       {/* Locate me */}
       {!trip && (
         <button onClick={locateMe} title="Show my location" aria-label="Show my location" style={{
-          position: 'absolute', left: 14, bottom: 66, zIndex: 6, height: 44, padding: '0 14px 0 11px', borderRadius: 22,
+          position: 'absolute', left: 14, bottom: 'calc(66px + var(--sab))', zIndex: 6, height: 44, padding: '0 14px 0 11px', borderRadius: 22,
           background: 'rgba(2,6,22,.92)', border: `1px solid ${me ? 'rgba(66,133,244,.6)' : 'rgba(0,212,255,.25)'}`,
           color: me ? '#8ab4ff' : 'var(--text3)', display: 'flex', alignItems: 'center', gap: 8,
           fontSize: 13, fontWeight: 700, boxShadow: '0 6px 20px rgba(0,0,0,.45)',

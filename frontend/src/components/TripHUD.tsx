@@ -184,7 +184,7 @@ export function TripHUD({ nav, isDesktop, onStartLive, rain, onShareEta, onShare
 
       {/* Dashboard */}
       <div style={{
-        ...glass, position: 'absolute', bottom: isDesktop ? 18 : 12, left: '50%', transform: 'translateX(-50%)',
+        ...glass, position: 'absolute', bottom: isDesktop ? 18 : 'calc(12px + var(--sab))', left: '50%', transform: 'translateX(-50%)',
         zIndex: 20, borderRadius: 18, padding: '14px 18px 12px',
         width: isDesktop ? 560 : 'calc(100% - 20px)', maxWidth: 'calc(100% - 20px)',
       }}>

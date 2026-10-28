@@ -10,7 +10,7 @@ export function InstallHint() {
       const ios = /iPhone|iPad|iPod/.test(navigator.userAgent)
       const standalone = (navigator as any).standalone === true || matchMedia('(display-mode: standalone)').matches
       if (ios && !standalone && !localStorage.getItem(KEY)) {
-        const t = setTimeout(() => setShow(true), 6000)
+        const t = setTimeout(() => setShow(true), 3500)
         return () => clearTimeout(t)
       }
     } catch { /* storage blocked */ }
@@ -25,8 +25,9 @@ export function InstallHint() {
     }}>
       <img src={`${import.meta.env.BASE_URL}icon-192.png`} width={40} height={40} alt="" style={{ borderRadius: 10 }} />
       <div style={{ flex: 1, lineHeight: 1.35 }}>
-        <b>Install Meta Maps</b><br />
-        Tap the Share button, then “Add to Home Screen” for a full-screen app.
+        <b>Install Meta Maps as an app</b><br />
+        Tap <span aria-label="Share" style={{ display: 'inline-block', padding: '0 4px', border: '1px solid rgba(0,212,255,.4)', borderRadius: 5, fontSize: 11 }}>Share ⬆</span>
+        {' '}then <b>Add to Home Screen</b>. It opens full screen, without the browser bar.
       </div>
       <button onClick={close} style={{ background: 'none', border: 0, color: '#00d4ff', fontWeight: 700, fontSize: 14 }}>Got it</button>
     </div>

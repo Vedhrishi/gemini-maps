@@ -49,7 +49,7 @@ export function HazardList({ reports, onFocus, onUpvote }: Props) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', overflow: 'auto', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', overflow: 'auto', height: '100%', paddingBottom: 'var(--sab)' }}>
       {reports.map((r, i) => {
         const c = SEVERITY_COLORS[r.severity] ?? '#00d4ff'
         return (
