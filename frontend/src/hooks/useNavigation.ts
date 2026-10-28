@@ -431,10 +431,12 @@ export function useNavigation({ reports, toast, speak }: Deps) {
   useEffect(() => {
     if (status !== 'trip' || !current || !trip) return
     const quiet = trip.speedMul > 10 // fast-forward demos would turn into spam
-    const say = (key: string, text: string, kind: 'info' | 'warn' | 'danger' | 'success' = 'info') => {
+    // Turn and hazard prompts are spoken, and the turn banner and hazard chip already show them
+    // on screen, so they do not also pop up as a toast (that buried the map while driving).
+    const say = (key: string, text: string, kind: 'info' | 'warn' | 'danger' | 'success' = 'info', popup = false) => {
       if (announced.current.has(key)) return
       announced.current.add(key)
-      toast(text, kind)
+      if (popup) toast(text, kind)
       if (!quiet) speak(text)
     }
 
@@ -454,7 +456,7 @@ export function useNavigation({ reports, toast, speak }: Deps) {
       const lim = limitAt(current.route, traveled)
       const bucket = Math.floor(Date.now() / 30000)
       if (trip.gpsKmh > lim * 1.1 + 3) {
-        say(`speed-${lim}-${bucket}`, `Speed limit ${lim}. Please slow down.`, 'warn')
+        say(`speed-${lim}-${bucket}`, `Speed limit ${lim}. Please slow down.`, 'warn', true)
       }
     }
     if (remainingM < 25) {

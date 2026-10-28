@@ -3,6 +3,7 @@
  * dashboard while driving (next turn, km left, time left, fuel used).
  */
 
+import { useCallback, useRef, useState } from 'react'
 import { LEVEL_COLOR } from '../lib/traffic'
 import { Nav } from '../hooks/useNavigation'
 import { money } from '../lib/fuel'
@@ -51,11 +52,24 @@ function Arrow({ kind, text }: { kind: string; text: string }) {
   return <span style={{ fontSize: 34, lineHeight: 1, color: 'var(--accent)' }}>{glyph}</span>
 }
 
-export function TripHUD({ nav, isDesktop, onStartLive, rain, onShareEta, onShareDestination, onSos }: {
+export function TripHUD({ nav, isDesktop, onStartLive, rain, onShareEta, onShareDestination, onSos, onOverview }: {
   nav: Nav; isDesktop: boolean; onStartLive: () => void
   rain?: RainOutlook; onShareEta?: () => void; onShareDestination?: () => void; onSos?: () => void
+  onOverview?: () => void
 }) {
   const { status, current, trip } = nav
+  // Driving keeps the screen clear: the bottom bar shows only what a driver needs.
+  // Fuel, Guardian log, sharing and SOS sit behind the ⋯ button.
+  const [more, setMore] = useState(isDesktop)
+  // The dashboard publishes its height so toasts and the Re-center button can sit above it
+  const roRef = useRef<ResizeObserver | null>(null)
+  const dashRef = useCallback((node: HTMLDivElement | null) => {
+    roRef.current?.disconnect(); roRef.current = null
+    if (!node) { document.documentElement.style.removeProperty('--dash-h'); return }
+    const set = () => document.documentElement.style.setProperty('--dash-h', `${node.offsetHeight}px`)
+    set()
+    if (typeof ResizeObserver !== 'undefined') { roRef.current = new ResizeObserver(set); roRef.current.observe(node) }
+  }, [])
   if (!current) return null
 
   // ── Before leaving ─────────────────────────────────────────────────────
@@ -182,10 +196,26 @@ export function TripHUD({ nav, isDesktop, onStartLive, rain, onShareEta, onShare
         </div>
       )}
 
+      {/* Re-center: shown whenever the driver has moved the camera away from the car */}
+      {!arrived && !trip.follow && (
+        <button
+          onClick={() => nav.patchTrip({ follow: true })}
+          aria-label="Re-center on my car"
+          style={{
+            position: 'absolute', zIndex: 21, left: '50%', transform: 'translateX(-50%)',
+            bottom: `calc(var(--dash-h, 150px) + ${isDesktop ? 30 : 24}px + var(--sab))`,
+            padding: '11px 20px', borderRadius: 24, fontWeight: 800, fontSize: 14, color: '#fff',
+            border: '1px solid rgba(120,200,255,.6)', background: 'linear-gradient(135deg,#0050ff,#00b4ff)',
+            boxShadow: '0 6px 24px rgba(0,120,255,.55)', display: 'flex', alignItems: 'center', gap: 8,
+            animation: 'slideUp .2s ease both',
+          }}
+        ><span aria-hidden style={{ fontSize: 15 }}>➤</span> Re-center</button>
+      )}
+
       {/* Dashboard */}
-      <div style={{
+      <div ref={dashRef} style={{
         ...glass, position: 'absolute', bottom: isDesktop ? 18 : 'calc(12px + var(--sab))', left: '50%', transform: 'translateX(-50%)',
-        zIndex: 20, borderRadius: 18, padding: '14px 18px 12px',
+        zIndex: 20, borderRadius: 18, padding: '12px 16px 10px',
         width: isDesktop ? 560 : 'calc(100% - 20px)', maxWidth: 'calc(100% - 20px)',
       }}>
         {arrived ? (
@@ -205,78 +235,93 @@ export function TripHUD({ nav, isDesktop, onStartLive, rain, onShareEta, onShare
             <Big compact={!isDesktop} label="Km left" value={(nav.remainingM / 1000).toFixed(nav.remainingM < 10000 ? 1 : 0)} unit="km" color="var(--accent)" />
             <Big compact={!isDesktop} label="Time left" value={fmtDur(nav.remainingSec)} />
             <Big compact={!isDesktop} label="Arrive" value={clock(nav.remainingSec * 1000).replace(/\s?(am|pm)/i, ' $1')} />
-            <Big
-              compact={!isDesktop}
-              label="Fuel used"
-              value={money(nav.fuelUsed.cost, current.fuel.currency)}
-              unit={`${nav.fuelUsed.litres.toFixed(nav.fuelUsed.litres < 10 ? 2 : 1)} ${current.fuel.unit}`}
-              color="#ffcc66"
-            />
-          </div>
-        )}
-
-        {!arrived && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12,
-            color: nav.guardian === 'checking' ? '#ffaa00' : 'var(--text3)',
-          }}>
-            <span style={{ fontSize: 13 }}>🛡</span>
-            <span style={{ fontWeight: 700, color: nav.guardian === 'checking' ? '#ffaa00' : '#00ff88' }}>
-              Guardian {nav.guardian === 'checking' ? 'checking alternatives…' : 'watching'}
-            </span>
-            {nav.agentLog[0] && nav.agentLog.length > 1 && (
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-                · {nav.agentLog[0].text}
-              </span>
+            {more && (
+              <Big
+                compact={!isDesktop}
+                label="Fuel used"
+                value={money(nav.fuelUsed.cost, current.fuel.currency)}
+                unit={`${nav.fuelUsed.litres.toFixed(nav.fuelUsed.litres < 10 ? 2 : 1)} ${current.fuel.unit}`}
+                color="#ffcc66"
+              />
             )}
           </div>
         )}
 
-        {/* Progress with hazard ticks */}
-        <div style={{ position: 'relative', height: 8, margin: '12px 0 10px', borderRadius: 4, background: 'rgba(255,255,255,.07)' }}>
-          <div style={{
-            position: 'absolute', inset: 0, width: `${pct}%`, borderRadius: 4,
-            background: 'linear-gradient(90deg,#0050ff,#00d4ff)', boxShadow: '0 0 14px rgba(0,212,255,.6)',
-            transition: 'width .2s linear',
-          }} />
-          {current.hazards.map(h => (
-            <span key={h.report.id} title={h.report.hazard_type} style={{
-              position: 'absolute', top: -3, width: 4, height: 14, borderRadius: 2,
-              left: `calc(${((before + h.at) / Math.max(1, nav.tripTotals.km)) * 100}% - 2px)`,
-              background: SEV[h.report.severity] ?? '#fa0', boxShadow: `0 0 8px ${SEV[h.report.severity]}`,
-            }} />
-          ))}
-        </div>
+        {!arrived && more && (
+          <>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12,
+              color: nav.guardian === 'checking' ? '#ffaa00' : 'var(--text3)',
+            }}>
+              <span style={{ fontSize: 13 }}>🛡</span>
+              <span style={{ fontWeight: 700, color: nav.guardian === 'checking' ? '#ffaa00' : '#00ff88', whiteSpace: 'nowrap' }}>
+                Guardian {nav.guardian === 'checking' ? 'checking alternatives…' : 'watching'}
+              </span>
+              {nav.agentLog[0] && nav.agentLog.length > 1 && (
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                  · {nav.agentLog[0].text}
+                </span>
+              )}
+            </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {!arrived && trip.mode === 'sim' && (
-            <>
-              <button onClick={() => nav.patchTrip({ paused: !trip.paused })} style={ctl(trip.paused)}>
-                {trip.paused ? '▶ Resume' : '❚❚ Pause'}
-              </button>
-              {[1, 8, 30, 120].map(m => (
-                <button key={m} onClick={() => nav.patchTrip({ speedMul: m })} style={ctl(trip.speedMul === m)}>{m}×</button>
+            {/* Progress with hazard ticks */}
+            <div style={{ position: 'relative', height: 8, margin: '12px 0 4px', borderRadius: 4, background: 'rgba(255,255,255,.07)' }}>
+              <div style={{
+                position: 'absolute', inset: 0, width: `${pct}%`, borderRadius: 4,
+                background: 'linear-gradient(90deg,#0050ff,#00d4ff)', boxShadow: '0 0 14px rgba(0,212,255,.6)',
+                transition: 'width .2s linear',
+              }} />
+              {current.hazards.map(h => (
+                <span key={h.report.id} title={h.report.hazard_type} style={{
+                  position: 'absolute', top: -3, width: 4, height: 14, borderRadius: 2,
+                  left: `calc(${((before + h.at) / Math.max(1, nav.tripTotals.km)) * 100}% - 2px)`,
+                  background: SEV[h.report.severity] ?? '#fa0', boxShadow: `0 0 8px ${SEV[h.report.severity]}`,
+                }} />
               ))}
-            </>
+            </div>
+          </>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+          {!arrived && !more && (
+            <span title="Guardian is watching the road ahead" style={{
+              fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+              color: nav.guardian === 'checking' ? '#ffaa00' : '#00ff88',
+            }}>🛡 {nav.guardian === 'checking' ? 'Checking…' : 'Guardian'}</span>
           )}
-          {!arrived && trip.mode === 'gps' && (
+          {!arrived && trip.mode === 'sim' && (
+            <button onClick={() => nav.patchTrip({ paused: !trip.paused })} style={ctl(trip.paused)}>
+              {trip.paused ? '▶ Resume' : '❚❚ Pause'}
+            </button>
+          )}
+          {!arrived && more && trip.mode === 'sim' && [1, 8, 30, 120].map(m => (
+            <button key={m} onClick={() => nav.patchTrip({ speedMul: m })} style={ctl(trip.speedMul === m)}>{m}×</button>
+          ))}
+          {!arrived && more && trip.mode === 'gps' && (
             <span style={{ fontSize: 12, color: trip.offRoute ? '#ff8aa8' : '#00ff88', fontWeight: 700 }}>
               ◎ {trip.offRoute ? 'Off route' : 'Live GPS'}
             </span>
           )}
-          {!arrived && (
+          {!arrived && more && (
             <button onClick={() => nav.patchTrip({ follow: !trip.follow })} style={ctl(trip.follow)}>
               {trip.follow ? '◉ Following' : '○ Follow'}
             </button>
           )}
-          {!arrived && onShareEta && (
+          {!arrived && more && onOverview && (
+            <button onClick={onOverview} style={ctl(false)} title="See the whole route">⌖ Overview</button>
+          )}
+          {!arrived && more && onShareEta && (
             <button onClick={onShareEta} style={ctl(false)} title="Send your arrival time">📤 Share ETA</button>
           )}
-          {!arrived && onSos && (
+          {!arrived && more && onSos && (
             <button onClick={onSos} style={{ ...ctl(false), color: '#ff5c77', borderColor: 'rgba(255,51,85,.45)' }} title="Emergency">SOS</button>
           )}
+          {!arrived && (
+            <button onClick={() => setMore(m => !m)} aria-expanded={more} aria-label={more ? 'Fewer options' : 'More options'}
+              style={{ ...ctl(more), marginLeft: more ? 0 : 'auto', minWidth: 40 }}>{more ? '▾ Less' : '⋯'}</button>
+          )}
           <button onClick={arrived ? nav.clear : nav.stopTrip} style={{
-            ...ctl(false), marginLeft: 'auto', color: '#ff8aa8', borderColor: 'rgba(255,34,102,.35)',
+            ...ctl(false), marginLeft: more || arrived ? 'auto' : 0, color: '#ff8aa8', borderColor: 'rgba(255,34,102,.35)',
           }}>{arrived ? 'Done' : 'End trip'}</button>
         </div>
       </div>

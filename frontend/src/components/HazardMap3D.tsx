@@ -28,6 +28,8 @@ interface Props {
   trip?: { pos: LngLatT; heading: number; follow: boolean } | null
   /** Called when the user drags the map during a trip (camera stops following) */
   onFollowBreak?: () => void
+  /** Called when the camera should lock back onto the car (after the driver stops touching the map) */
+  onFollowResume?: () => void
   /** The user's live position (blue dot) */
   me?: { lat: number; lng: number; heading: number | null; accuracy: number } | null
   /** Called by the locate button when there is no fix yet */
@@ -175,7 +177,7 @@ function popupHTML(r: HazardReport): string {
     </div>`
 }
 
-export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, trip, onFollowBreak, me, onLocate, autoFit = false }: Props) {
+export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, trip, onFollowBreak, onFollowResume, me, onLocate, autoFit = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MLMap | null>(null)
   const markersRef = useRef<Map<string, Marker>>(new Map())
@@ -192,6 +194,24 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
   const onFollowBreakRef = useRef(onFollowBreak)
   useEffect(() => { routeRef.current = route }, [route])
   useEffect(() => { onFollowBreakRef.current = onFollowBreak }, [onFollowBreak])
+  const onFollowResumeRef = useRef(onFollowResume)
+  useEffect(() => { onFollowResumeRef.current = onFollowResume }, [onFollowResume])
+  const tripRef = useRef(trip)
+  useEffect(() => { tripRef.current = trip }, [trip])
+  // The follow camera stays out of the way while the driver is moving the map themselves
+  const busyUntil = useRef(0)
+  const resumeTimer = useRef<number | null>(null)
+  const wasFollowing = useRef(false)
+  const firstFollow = useRef(true)
+  const scheduleResume = useCallback((ms = 12000) => {
+    if (resumeTimer.current) window.clearTimeout(resumeTimer.current)
+    resumeTimer.current = window.setTimeout(() => {
+      resumeTimer.current = null
+      const t = tripRef.current
+      if (t && !t.follow) onFollowResumeRef.current?.()
+    }, ms)
+  }, [])
+  useEffect(() => () => { if (resumeTimer.current) window.clearTimeout(resumeTimer.current) }, [])
   const reportsRef = useRef<HazardReport[]>(reports)
   const rafRef = useRef<number | null>(null)
   const fittedRef = useRef(false)
@@ -361,8 +381,23 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
         paint: { 'line-color': '#ffffff', 'line-width': w(1.6, 4), 'line-opacity': 0.9, 'line-dasharray': [0, 4, 3] } }, before)
       setReady(true)
     })
-    // Dragging takes the camera back from the trip follower
-    map.on('dragstart', () => onFollowBreakRef.current?.())
+    // Moving the map yourself takes the camera back from the trip follower (like Google Maps):
+    // panning or rotating pauses follow, pinch-zoom and tilt keep following at the new angle.
+    // Programmatic moves carry no originalEvent, so only real touches count here.
+    const userMove = (e: any) => {
+      if (!e?.originalEvent) return
+      busyUntil.current = Date.now() + 2500
+      const t = tripRef.current
+      if (t?.follow && (e.type === 'dragstart' || e.type === 'rotatestart')) onFollowBreakRef.current?.()
+      if (t) scheduleResume()
+    }
+    if (location.search.includes('debug=1')) (window as any).__gmMap = map
+    map.on('dragstart', userMove)
+    map.on('rotatestart', userMove)
+    map.on('zoomstart', userMove)
+    map.on('pitchstart', userMove)
+    map.on('dragend', userMove)
+    map.on('zoomend', userMove)
     map.on('move', () => scheduleDeclutter())
     map.on('error', e => {
       // Tile 404s are routine at the edges; only a style failure is fatal
@@ -548,7 +583,12 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
-    if (!trip) { carRef.current?.remove(); carRef.current = null; return }
+    if (!trip) {
+      carRef.current?.remove(); carRef.current = null
+      wasFollowing.current = false; firstFollow.current = true
+      if (resumeTimer.current) { window.clearTimeout(resumeTimer.current); resumeTimer.current = null }
+      return
+    }
     if (!carRef.current) {
       const el = document.createElement('div')
       el.className = 'hz-car'
@@ -565,24 +605,37 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
     }
     carRef.current.setLngLat(trip.pos).setRotation(trip.heading)
     if (trip.follow) {
-      // One smooth fly-in to driving view, then lock the camera to the car.
-      // (Re-issuing a long ease on every position tick would make the camera
-      // chase the car and never catch up.)
-      const needsFlyIn = map.getZoom() < 15.9 || map.getPitch() < 50
-      if (needsFlyIn) {
-        if (!followFlying.current) {
-          followFlying.current = true
-          map.once('moveend', () => { followFlying.current = false })
-          map.easeTo({
-            center: trip.pos, bearing: trip.heading, pitch: 62, zoom: 16.4, duration: 1600,
-          })
-        }
-      } else if (!followFlying.current) {
+      const justStarted = !wasFollowing.current
+      wasFollowing.current = true
+      const fly = (opts: maplibregl.EaseToOptions & { duration: number }) => {
+        followFlying.current = true
+        const done = () => { followFlying.current = false }
+        map.once('moveend', done)
+        window.setTimeout(done, opts.duration + 400)
+        map.easeTo(opts)
+      }
+      if (justStarted) {
+        // One smooth glide to the driving view at the start of the trip or on Re-center.
+        // After the first time, the driver's own zoom and tilt are kept.
+        const z = map.getZoom()
+        const first = firstFollow.current
+        firstFollow.current = false
+        fly({
+          center: trip.pos, bearing: trip.heading,
+          pitch: first ? 62 : map.getPitch(),
+          zoom: first || z < 14.8 ? 16.4 : Math.min(17.8, z),
+          duration: first ? 1600 : 900,
+        })
+      } else if (!followFlying.current && Date.now() > busyUntil.current) {
+        // Re-issuing a long ease on every tick would make the camera chase the car,
+        // so follow with a short linear ease and leave zoom and tilt where the driver put them.
         map.easeTo({
-          center: trip.pos, bearing: trip.heading, pitch: 62,
+          center: trip.pos, bearing: trip.heading, pitch: map.getPitch(),
           zoom: Math.min(17.8, map.getZoom()), duration: 240, easing: t => t,
         })
       }
+    } else {
+      wasFollowing.current = false
     }
   }, [trip, ready])
 
@@ -625,6 +678,7 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
 
   const setView = useCallback((p: number) => {
     setPitch(p)
+    busyUntil.current = Date.now() + 1200
     mapRef.current?.easeTo({ pitch: p, duration: 700 })
   }, [])
 
@@ -650,8 +704,11 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
       else if (act === 'north') map.easeTo({ bearing: 0, duration: 600 })
       else if (act === 'locate') locateMe()
       else if (act === 'fit') {
-        if (routeRef.current) fitRoute(900)
-        else { setPitch(DEFAULT_PITCH); map.once('moveend', () => fitScreen(0)); map.easeTo({ pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING, duration: 600 }) }
+        if (routeRef.current) {
+          if (tripRef.current?.follow) onFollowBreakRef.current?.()
+          if (tripRef.current) scheduleResume(45000)
+          fitRoute(900)
+        } else { setPitch(DEFAULT_PITCH); map.once('moveend', () => fitScreen(0)); map.easeTo({ pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING, duration: 600 }) }
       }
     }
     window.addEventListener('gm:map', on)
@@ -740,7 +797,11 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
           onClick={() => {
             const map = mapRef.current
             if (!map) return
-            if (routeRef.current) { fitRoute(900); return }
+            if (routeRef.current) {
+              if (tripRef.current?.follow) onFollowBreakRef.current?.()
+              if (tripRef.current) scheduleResume(45000)
+              fitRoute(900); return
+            }
             setPitch(DEFAULT_PITCH)
             map.once('moveend', () => fitScreen(0))
             map.easeTo({ pitch: DEFAULT_PITCH, bearing: DEFAULT_BEARING, duration: 600 })

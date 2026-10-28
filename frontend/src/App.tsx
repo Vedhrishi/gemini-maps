@@ -34,7 +34,7 @@ import { fetchReports, upvoteReport, HazardReport } from './lib/api'
 import { makeSeedReports, startSimulation } from './lib/demoData'
 
 type Tab = 'map' | 'report' | 'list' | 'nav'
-type Toast = { id: string; text: string; type: 'info' | 'success' | 'warn' | 'danger' }
+type Toast = { id: string; text: string; type: 'info' | 'success' | 'warn' | 'danger'; ms: number }
 
 export default function App() {
   const [booting, setBooting] = useState(() => {
@@ -64,10 +64,15 @@ export default function App() {
   const reportsRef = useRef<HazardReport[]>([])
   useEffect(() => { reportsRef.current = reports }, [reports])
 
+  // While driving: no chatter. Only warnings and Guardian news, one at a time, short.
+  const drivingRef = useRef(false)
   const toast = useCallback((text: string, type: Toast['type'] = 'info') => {
+    const driving = drivingRef.current
+    if (driving && type === 'info') return
     const id = String(toastId.current++)
-    setToasts(prev => [...prev, { id, text, type }])
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4500)
+    const ms = driving ? 3200 : 4500
+    setToasts(prev => (driving ? [{ id, text, type, ms }] : [...prev.slice(-2), { id, text, type, ms }]))
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), ms)
   }, [])
 
   // Live device location (continuous). Until the first fix the map shows the demo area.
@@ -180,6 +185,7 @@ export default function App() {
 
   // ── Navigation ──────────────────────────────────────────────────────────
   const nav = useNavigation({ reports, toast, speak })
+  drivingRef.current = nav.status === 'trip'
   useWakeLock(nav.status === 'trip')
   const userPos = { lat: userLat, lng: userLng, real: gpsReal }
   // "Pick on map" answer from the map
@@ -759,6 +765,7 @@ export default function App() {
                 trip={nav.trip && nav.tripPos
                   ? { pos: nav.tripPos.pos, heading: nav.tripPos.heading, follow: nav.trip.follow } : null}
                 onFollowBreak={() => nav.patchTrip({ follow: false })}
+                onFollowResume={() => nav.patchTrip({ follow: true })}
                 me={loc.fix ? { lat: loc.fix.lat, lng: loc.fix.lng, heading: loc.fix.heading, accuracy: loc.fix.accuracy } : null}
                 onLocate={loc.request}
               />
@@ -773,6 +780,7 @@ export default function App() {
             nav={nav} isDesktop={isDesktop} onStartLive={startLive}
             rain={rain.key === nav.planId ? rain.outlook : null}
             onShareEta={shareEta} onShareDestination={shareDestination} onSos={() => setShowSos(true)}
+            onOverview={() => window.dispatchEvent(new CustomEvent('gm:map', { detail: 'fit' }))}
           />
 
           {/* Emergency and share-my-location, one tap away when not driving */}
@@ -890,7 +898,8 @@ export default function App() {
       <div style={{
         position: 'fixed',
         ...(!isDesktop && (nav.status === 'trip' || nav.status === 'arrived')
-          ? { top: 318, left: 20, right: 20 } : { bottom: 20, right: 20 }),
+          ? { bottom: 'calc(var(--dash-h, 150px) + 76px + var(--sab, 0px))', left: 16, right: 16, alignItems: 'center' }
+          : { bottom: 20, right: 20 }),
         display: 'flex', flexDirection: 'column-reverse', gap: 8,
         zIndex: 9999, maxWidth: !isDesktop ? undefined : 340, pointerEvents: 'none',
       }}>
@@ -903,9 +912,10 @@ export default function App() {
           }[t.type]
           return (
             <div key={t.id} style={{
-              background: s.bg, backdropFilter: 'blur(24px)',
+              background: `linear-gradient(${s.bg},${s.bg}), rgba(3,9,20,.94)`, backdropFilter: 'blur(24px)',
               border: `1px solid ${s.bd}`, borderRadius: 12,
-              padding: '11px 16px', fontSize: 13, lineHeight: 1.4,
+              padding: nav.status === 'trip' ? '8px 14px' : '11px 16px', fontSize: nav.status === 'trip' ? 12.5 : 13, lineHeight: 1.35,
+              maxWidth: '100%',
               animation: 'slideIn 0.25s cubic-bezier(0.4,0,0.2,1)',
               boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
               display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text)',
@@ -920,7 +930,7 @@ export default function App() {
               <span style={{
                 position: 'absolute', bottom: 0, left: 0, height: 2,
                 background: s.dot, opacity: 0.5,
-                animation: 'toast-life 4.5s linear forwards',
+                animation: `toast-life ${t.ms}ms linear forwards`,
               }} />
             </div>
           )
