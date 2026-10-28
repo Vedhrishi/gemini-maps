@@ -338,6 +338,71 @@ async def traffic_flow(request: Request, points: str):
     return {"live": bool(samples), "samples": samples}
 
 
+# ── Rain along the route (Open-Meteo, free, no key) ──────────────────────────
+_wx_cache: dict = {}
+
+
+def parse_open_meteo(j: dict, hours: int = 12) -> list:
+    """Open-Meteo hourly forecast -> [{t, p, mm}] for the next `hours` hours (t = ISO time, UTC)."""
+    h = (j or {}).get("hourly") or {}
+    ts, probs, mms = h.get("time") or [], h.get("precipitation_probability") or [], h.get("precipitation") or []
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    out = []
+    for i, t in enumerate(ts):
+        try:
+            at = datetime.fromisoformat(t).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if at < now:
+            continue
+        out.append({
+            "t": at.isoformat(),
+            "p": int(probs[i]) if i < len(probs) and probs[i] is not None else None,
+            "mm": float(mms[i]) if i < len(mms) and mms[i] is not None else None,
+        })
+        if len(out) >= hours:
+            break
+    return out
+
+
+@app.get("/api/weather")
+async def weather(request: Request, points: str):
+    """Hourly rain forecast for up to 3 points ("lat,lng|lat,lng"), next 12 hours, cached 20 min per ~10 km cell."""
+    _limit(request, "weather", 60)
+    pts = []
+    for p in points.split("|")[:3]:
+        try:
+            la, ln = (float(x) for x in p.split(","))
+            if -90 <= la <= 90 and -180 <= ln <= 180:
+                pts.append((round(la, 1), round(ln, 1)))
+        except ValueError:
+            continue
+    now = time.time()
+
+    async def one(client, la, ln):
+        hit = _wx_cache.get((la, ln))
+        if hit and now - hit[0] < 1200:
+            return hit[1]
+        try:
+            r = await client.get("https://api.open-meteo.com/v1/forecast", params={
+                "latitude": la, "longitude": ln, "hourly": "precipitation_probability,precipitation",
+                "forecast_hours": 14, "timezone": "UTC",
+            })
+            hours = parse_open_meteo(r.json()) if r.status_code == 200 else None
+        except Exception:
+            hours = None
+        if hours is not None:
+            _wx_cache[(la, ln)] = (now, hours)
+            if len(_wx_cache) > 3000:
+                for k in list(_wx_cache)[:600]:
+                    _wx_cache.pop(k, None)
+        return hours
+
+    async with httpx.AsyncClient(timeout=6) as client:
+        res = await asyncio.gather(*(one(client, la, ln) for la, ln in pts))
+    return {"points": [{"lat": la, "lng": ln, "hours": h} for (la, ln), h in zip(pts, res) if h is not None]}
+
+
 class NewPlace(BaseModel):
     name: str
     lat: float

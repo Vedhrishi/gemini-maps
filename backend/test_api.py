@@ -178,3 +178,17 @@ def test_probe_marks_muse_down_when_key_has_no_models(monkeypatch):
     monkeypatch.setattr(httpx, "get", lambda *a, **k: R2())
     ai_client.probe_muse()
     assert ai_client.ai_status()["serving"] == "muse"
+
+
+def test_parse_open_meteo_skips_past_hours():
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    ts = [(now + timedelta(hours=k)).strftime("%Y-%m-%dT%H:%M") for k in (-2, -1, 0, 1, 2)]
+    j = {"hourly": {"time": ts, "precipitation_probability": [90, 80, 10, 70, None], "precipitation": [5, 4, 0, 2.5, None]}}
+    out = appmod.parse_open_meteo(j)
+    assert [o["p"] for o in out] == [10, 70, None] and out[1]["mm"] == 2.5
+
+
+def test_weather_endpoint_handles_bad_points(monkeypatch):
+    r = c.get("/api/weather", params={"points": "abc|999,999"})
+    assert r.status_code == 200 and r.json() == {"points": []}
