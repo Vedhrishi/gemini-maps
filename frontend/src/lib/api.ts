@@ -83,4 +83,4 @@ export async function fetchProvider(): Promise<string> {
 }
 
 export const providerLabel = (p: string) =>
-  p.startsWith('muse') ? 'Meta Muse Spark' : p === 'gemini' ? 'Gemini' : 'AI vision'
+  p === 'muse-wonder' ? 'Meta Muse Wonder' : p.startsWith('muse') ? 'Meta Muse Spark' : p === 'gemini' ? 'Gemini' : 'AI vision'

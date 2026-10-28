@@ -435,7 +435,7 @@ async def ai_check(request: Request, deep: int = 0):
     if deep:
         key = os.environ.get("MUSE_API_KEY") or os.environ.get("MODEL_API_KEY") or ""
         h = {"Authorization": f"Bearer {key}"}
-        out = {"key_len": len(key)}
+        out = {"key_set": bool(key)}
         async with httpx.AsyncClient(timeout=30) as c:
             try:
                 r = await c.get("https://api.meta.ai/v1/models", headers=h)

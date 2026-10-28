@@ -123,7 +123,7 @@ def _gemini_transcribe(audio_bytes: bytes, mime_type: str = "audio/webm") -> str
 # /asr/transcribe route for Muse Voice Transcribe (WAV only, multipart).
 
 MUSE_BASE = "https://api.meta.ai/v1"
-MUSE_MODEL = os.getenv("MUSE_MODEL", "muse-wonder-1.0")
+MUSE_MODEL = os.getenv("MUSE_MODEL", "muse-spark-1.3")
 MUSE_ASR_MODEL = os.getenv("MUSE_ASR_MODEL", "muse-voice-transcribe-1.0")
 
 
@@ -151,7 +151,7 @@ def _muse_analyze(image_bytes: bytes) -> dict:
     }]
     last = None
     response = None
-    for model in dict.fromkeys([MUSE_MODEL, "muse-wonder-1.0", "muse-spark-1.3", "muse-spark-1.2"]):
+    for model in dict.fromkeys([MUSE_MODEL, "muse-spark-1.2", "muse-wonder-1.0"]):
         try:
             response = client.chat.completions.create(
                 model=model, messages=messages,
@@ -164,7 +164,9 @@ def _muse_analyze(image_bytes: bytes) -> dict:
         raise RuntimeError(last)
     text = response.choices[0].message.content or ""
     m = re.search(r"\{.*\}", text, re.S)
-    return _parse_json(m.group(0) if m else text)
+    out = _parse_json(m.group(0) if m else text)
+    out["_muse_model"] = model
+    return out
 
 
 def _to_wav(audio_bytes: bytes, mime_type: str) -> bytes:
@@ -338,6 +340,9 @@ def analyze_image_sync(image_bytes: bytes) -> dict:
         out, model = _mock_analyze(image_bytes), "mock"
     elif p == "muse":
         out, model = _with_fallback(lambda: _muse_analyze(image_bytes), lambda: _gemini_analyze(image_bytes), "muse-spark")
+        used = str(out.pop("_muse_model", ""))
+        if model != "gemini" and used.startswith("muse-wonder"):
+            model = "muse-wonder"
     else:
         out, model = _gemini_analyze(image_bytes), "gemini"
     out["ai_model"] = model
