@@ -9,6 +9,7 @@
  */
 
 import { useRef, useCallback, useEffect, useState } from 'react'
+import { isCategoryRequest } from '../lib/nearest'
 import { transcribeAudio } from '../lib/api'
 
 export type VoiceCommand = string
@@ -24,7 +25,7 @@ export const VOICE_COMMANDS: { phrase: string; does: string }[] = [
   { phrase: 'start trip · stop trip · pause · resume', does: 'Drive controls' },
   { phrase: 'how far · how long · when do I arrive', does: 'Trip answers' },
   { phrase: "how's the traffic · where am I", does: 'Traffic and your location' },
-  { phrase: 'nearest petrol pump · restaurant · ATM · hospital', does: 'Find and route to the closest one' },
+  { phrase: 'nearest beach · Chinese restaurant · Japanese temple · ATM', does: 'Any kind of place, or a brand like Dominos: find and route to the closest' },
   { phrase: 'fastest route · safer route · reroute', does: 'Pick or re-plan a route' },
   { phrase: "what's the speed limit", does: 'Limit and your speed' },
   { phrase: 'any hazards ahead', does: 'Road ahead' },
@@ -45,7 +46,7 @@ export const VOICE_COMMANDS: { phrase: string; does: string }[] = [
 // "Hey Meta" is the wake phrase. Speech engines often hear it as metta / mehta / meda,
 // so those are accepted too; the older "Hey Gemini" still works.
 export const WAKE_NAMES = 'meta maps|gemini maps|meta|metta|mehta|meda|medha|matta|gemini|jemini|geminy'
-export const WAKE_RE = new RegExp(`^\\s*(hey|hi|ok|okay|hello|yo|a)[ ,]+(${WAKE_NAMES})\\b[ ,.!]*`, 'i')
+export const WAKE_RE = new RegExp(`^\\s*((hey|hi|ok|okay|hello|yo|a)[ ,]+)?(${WAKE_NAMES})\\b[ ,.!]*`, 'i')
 
 export function parseCommand(text: string): VoiceCommand {
   const wake = text.match(WAKE_RE)
@@ -60,7 +61,9 @@ export function parseCommand(text: string): VoiceCommand {
   if (has(/(share|send) (my )?(eta|trip|arrival|journey|ride)|tell (them|him|her|everyone) i'?m (coming|on my way)/)) return 'SHARE_ETA'
   if (has(/(share|send) (my )?(live |current )?location|share where i am/)) return 'SHARE_LOCATION'
   if (!going && has(/\b(rain|raining|rainy|weather|umbrella|forecast)\b/)) return 'WEATHER'
-  if (has(/\b(nearest|nearby|closest|near me|around me)\b|where can i (eat|get|find|fill)|i('m| am) (hungry|low on (fuel|petrol|diesel))|i need (petrol|fuel|diesel|a (doctor|hospital|atm|mechanic))/)) return 'NEAREST'
+  if (has(/\b(nearest|nearby|closest|near me|around me)\b|where can i (eat|get|find|fill|pray|stay|park|buy|shop)|i('m| am) (hungry|low on (fuel|petrol|diesel))|i need (petrol|fuel|diesel|a (doctor|hospital|atm|mechanic))/)) return 'NEAREST'
+  // "beach", "chinese restaurant", "find a japanese temple": a kind of place, not one named place
+  if (isCategoryRequest(t)) return 'NEAREST'
   if (has(/where am i|my (current )?location|locate me|find me|show me on the map|centre on me|center on me/)) return 'LOCATE'
   if (has(/^(show|open|go to|switch to) (the )?(report|map|live map|feed|list|navigation|directions)( tab| screen)?$/)) {
     return /report/.test(t) ? 'TAB_REPORT' : /feed|list/.test(t) ? 'TAB_LIST' : /navigation|directions/.test(t) ? 'TAB_NAV' : 'TAB_MAP'
@@ -110,10 +113,12 @@ export function parseCommand(text: string): VoiceCommand {
 // ── Speaking ─────────────────────────────────────────────────────────────────
 // The microphone must not hear the app's own voice: listeners pause while it talks.
 let ttsActive = false
+let ttsEndedAt = 0
 const ttsListeners = new Set<(on: boolean) => void>()
 function setTts(on: boolean) {
   if (ttsActive === on) return
   ttsActive = on
+  if (!on) ttsEndedAt = Date.now()
   ttsListeners.forEach(f => f(on))
 }
 
@@ -148,6 +153,21 @@ export function speak(text: string) {
 }
 
 // ── Recognition ──────────────────────────────────────────────────────────────
+
+/** 16-bit mono PCM chunks into a WAV file (every browser, the server and Muse can read it). */
+function encodeWav(parts: Int16Array[], rate: number): Blob {
+  const n = parts.reduce((a, p) => a + p.length, 0)
+  const buf = new ArrayBuffer(44 + n * 2)
+  const v = new DataView(buf)
+  const str = (o: number, t: string) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)) }
+  str(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); str(8, 'WAVE'); str(12, 'fmt ')
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true)
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true)
+  str(36, 'data'); v.setUint32(40, n * 2, true)
+  let o = 44
+  for (const p of parts) for (let i = 0; i < p.length; i++, o += 2) v.setInt16(o, p[i], true)
+  return new Blob([buf], { type: 'audio/wav' })
+}
 
 export type VoiceStatus =
   | 'off'          // voice switched off
@@ -300,7 +320,7 @@ export function useVoice({ onCommand, enabled = true }: UseVoiceOptions) {
   const pushBusy = useRef(false)
   const pushStop = useRef<(() => void) | null>(null)
 
-  const talk = useCallback(async () => {
+  const talkOnce = useCallback(async () => {
     if (pushBusy.current) { pushStop.current?.(); return } // second tap ends the recording early
     if (typeof navigator.mediaDevices?.getUserMedia !== 'function' || typeof MediaRecorder === 'undefined') { setStatus('unsupported'); return }
     pushBusy.current = true
@@ -376,6 +396,144 @@ export function useVoice({ onCommand, enabled = true }: UseVoiceOptions) {
     }
   }, [run, clearSoon])
 
+
+  // ── hands-free engine for iPhone and iPad ──
+  // Safari has no usable speech recognition, so the microphone stays open instead: speech is cut out
+  // locally (with a little audio from just before it began), sent to the server as a short WAV, and only
+  // acted on when it starts with "Hey Meta" (or soon after a command, or after a tap on the pill).
+  const hf = useRef<{ stop: () => void; ctx: AudioContext; stream: MediaStream } | null>(null)
+  const hfStarting = useRef(false)
+  const hfWant = useRef(false)
+  const awakeUntil = useRef(0)
+  const awakeT = useRef<number | undefined>(undefined)
+  const [awake, setAwake] = useState(false)
+  const uploading = useRef(0)
+
+  const wakeFor = useCallback((ms: number) => {
+    awakeUntil.current = Date.now() + ms
+    setAwake(true)
+    window.clearTimeout(awakeT.current)
+    awakeT.current = window.setTimeout(() => setAwake(false), ms)
+  }, [])
+
+  const handleUtterance = useCallback(async (wav: Blob) => {
+    if (uploading.current >= 2) return           // never queue up behind a slow connection
+    uploading.current++
+    setStatus('thinking')
+    try {
+      const text = (await transcribeAudio(wav)).trim()
+      if (DEBUG) console.log('[voice] heard:', text)
+      if (!text) return
+      const isWake = WAKE_RE.test(text)
+      const open = Date.now() < awakeUntil.current
+      if (!isWake && !open) return               // someone talking in the car: not for us
+      setTranscript(text)
+      run(text)
+      clearSoon(text)
+      wakeFor(isWake && parseCommand(text) === 'WAKE' ? 9000 : 6000) // a follow-up needs no wake word
+    } catch {
+      /* a failed upload is dropped: the next phrase tries again */
+    } finally {
+      uploading.current--
+      if (hf.current) setStatus('listening')
+    }
+  }, [run, clearSoon, wakeFor])
+
+  const stopHandsFree = useCallback(() => {
+    hfWant.current = false
+    hf.current?.stop()
+    hf.current = null
+  }, [])
+
+  const startHandsFree = useCallback(async (): Promise<boolean> => {
+    if (hf.current) return true
+    if (hfStarting.current) return false
+    const AC = (window as any).AudioContext || (window as any).webkitAudioContext
+    if (!AC || typeof navigator.mediaDevices?.getUserMedia !== 'function') return false
+    hfStarting.current = true
+    hfWant.current = true
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+      const ctx: AudioContext = new AC()
+      if (typeof ctx.createScriptProcessor !== 'function') { stream.getTracks().forEach(t => t.stop()); ctx.close(); hfStarting.current = false; return false }
+      try { await ctx.resume() } catch { /* needs a tap: the next tap retries */ }
+      const src = ctx.createMediaStreamSource(stream)
+      const proc = ctx.createScriptProcessor(4096, 1, 1)
+      const mute = ctx.createGain(); mute.gain.value = 0
+      src.connect(proc); proc.connect(mute); mute.connect(ctx.destination)
+      const ratio = ctx.sampleRate / 16000
+
+      let noise = 0.008, inSeg = false, run0 = 0, speechMs = 0, quietMs = 0, segMs = 0
+      let pre: Int16Array[] = [], preLen = 0
+      let seg: Int16Array[] = []
+      const down = (x: Float32Array): Int16Array => {
+        const n = Math.floor(x.length / ratio), out = new Int16Array(n)
+        for (let i = 0; i < n; i++) {
+          const a = Math.floor(i * ratio), b = Math.max(a + 1, Math.floor((i + 1) * ratio))
+          let sum = 0; for (let k = a; k < b; k++) sum += x[k]
+          out[i] = Math.max(-1, Math.min(1, sum / (b - a))) * 0x7fff
+        }
+        return out
+      }
+      const reset = () => { inSeg = false; run0 = 0; speechMs = 0; quietMs = 0; segMs = 0; seg = []; pre = []; preLen = 0 }
+      const finish = () => {
+        const heard = speechMs, parts = seg
+        reset()
+        if (heard < 380) { setStatus('listening'); setLevel(0); return }
+        void handleUtterance(encodeWav(parts, 16000))
+      }
+      proc.onaudioprocess = (e: AudioProcessingEvent) => {
+        const x = e.inputBuffer.getChannelData(0)
+        const ms = (x.length / ctx.sampleRate) * 1000
+        // the app's own voice (and the moment after it) is not for us
+        if (ttsActive || Date.now() - ttsEndedAt < 700) { if (inSeg || pre.length) reset(); return }
+        let sum = 0
+        for (let i = 0; i < x.length; i++) sum += x[i] * x[i]
+        const rms = Math.sqrt(sum / x.length)
+        const voiced = rms > Math.max(0.018, noise * 3.2)
+        if (!voiced) noise = noise * 0.97 + rms * 0.03   // learn the room's noise from the quiet bits
+        setLevel(Math.min(1, rms * 7))
+        const chunk = down(x)
+        if (!inSeg) {
+          pre.push(chunk); preLen += chunk.length
+          while (preLen > 8000 && pre.length > 1) preLen -= pre.shift()!.length // keep ~0.5 s before speech
+          run0 = voiced ? run0 + 1 : 0
+          if (run0 >= 2) { inSeg = true; seg = pre; pre = []; preLen = 0; speechMs = run0 * ms; quietMs = 0; segMs = 0; setStatus('hearing') }
+        } else {
+          seg.push(chunk); segMs += ms
+          if (voiced) { speechMs += ms; quietMs = 0 } else quietMs += ms
+          if (quietMs > 950 || segMs > 9000) finish()
+        }
+      }
+      stream.getAudioTracks()[0]?.addEventListener('ended', () => { if (hf.current?.stream === stream) { hf.current = null; if (hfWant.current) setStatus('ready') } })
+      hf.current = {
+        ctx, stream,
+        stop: () => {
+          try { proc.disconnect(); src.disconnect(); mute.disconnect() } catch { /* already gone */ }
+          stream.getTracks().forEach(t => t.stop())
+          try { void ctx.close() } catch { /* ignore */ }
+        },
+      }
+      setStatus('listening')
+      hfStarting.current = false
+      return true
+    } catch {
+      hfStarting.current = false
+      hfWant.current = false
+      setStatus('blocked')
+      return false
+    }
+  }, [handleUtterance])
+
+  /** Tap on the pill: start the open microphone (the tap is what lets iOS allow it), or "wake" it right now. */
+  const talk = useCallback(async () => {
+    if (hf.current) { wakeFor(8000); setStatus('listening'); void hf.current.ctx.resume().catch(() => {}); return }
+    if (pushBusy.current) { pushStop.current?.(); return }
+    const ok = await startHandsFree()
+    if (ok) wakeFor(8000)
+    else if (!hfStarting.current) await talkOnce()       // no Web Audio here: one phrase per tap
+  }, [startHandsFree, wakeFor, talkOnce])
+
   // ── lifecycle ──
   useEffect(() => {
     const w = window as any
@@ -384,21 +542,27 @@ export function useVoice({ onCommand, enabled = true }: UseVoiceOptions) {
     setMode(push ? 'push' : 'continuous')
     if (!enabled) {
       want.current = false
+      stopHandsFree()
       stopContinuous()
       pushStop.current?.()
       setStatus('off')
       return
     }
     if (push) {
-      setStatus(typeof MediaRecorder !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function' ? 'ready' : 'unsupported')
-      return
+      const canHear = typeof navigator.mediaDevices?.getUserMedia === 'function' && (typeof MediaRecorder !== 'undefined' || !!(w.AudioContext || w.webkitAudioContext))
+      setStatus(canHear ? 'ready' : 'unsupported')
+      if (!canHear) return
+      // iOS only opens the microphone after a touch: the first tap anywhere in the app starts listening
+      const first = () => { if (enabledRef.current && !hf.current) void startHandsFree() }
+      document.addEventListener('pointerdown', first, { once: true })
+      return () => { document.removeEventListener('pointerdown', first); stopHandsFree() }
     }
     want.current = true
     fatal.current = false
     backoff.current = 300
     startContinuous()
     return () => { want.current = false; stopContinuous() }
-  }, [enabled, startContinuous, stopContinuous])
+  }, [enabled, startContinuous, stopContinuous, startHandsFree, stopHandsFree])
 
   // pause while the app is talking, resume afterwards; pause in the background
   useEffect(() => {
@@ -409,15 +573,21 @@ export function useVoice({ onCommand, enabled = true }: UseVoiceOptions) {
     }
     ttsListeners.add(onTts)
     const onVis = () => {
+      if (hfWant.current) {
+        // iOS suspends the microphone in the background: reopen it when the app comes back
+        if (document.hidden) { hf.current?.stop(); hf.current = null }
+        else if (!hf.current) { void startHandsFree().then(ok => { if (!ok && !hfStarting.current) setStatus('ready') }) }
+        return
+      }
       if (!want.current) return
       if (document.hidden) stopContinuous()
       else startContinuous()
     }
     document.addEventListener('visibilitychange', onVis)
     return () => { ttsListeners.delete(onTts); document.removeEventListener('visibilitychange', onVis) }
-  }, [startContinuous, stopContinuous])
+  }, [startContinuous, stopContinuous, startHandsFree])
 
   const listening = status === 'listening' || status === 'hearing' || status === 'recording'
   const supported = status !== 'unsupported'
-  return { listening, supported, transcript, level, status, mode, talk }
+  return { listening, supported, transcript, level, status, mode, talk, awake }
 }

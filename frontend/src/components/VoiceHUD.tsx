@@ -10,17 +10,20 @@ export function VoiceHUD({
   level,
   enabled,
   onTalk,
+  awake,
 }: {
   status: VoiceStatus
   transcript: string
   level: number
   enabled: boolean
   onTalk?: () => void
+  /** hands-free on iPhone: ready to act on the next phrase without "Hey Meta" */
+  awake?: boolean
 }) {
   if (!enabled) return null
   const words = transcript.trim()
   const live = status === 'listening' || status === 'hearing' || status === 'recording'
-  const tappable = !!onTalk && (status === 'ready' || status === 'recording')
+  const tappable = !!onTalk && (status === 'ready' || status === 'recording' || status === 'listening' || status === 'hearing')
 
   let tone: 'idle' | 'live' | 'active' | 'warn' = live ? 'live' : 'idle'
   let text: React.ReactNode
@@ -38,9 +41,11 @@ export function VoiceHUD({
   } else if (status === 'thinking') {
     text = <span style={{ color: '#7a9cc0' }}>Understanding…</span>
   } else if (status === 'ready') {
-    text = <span style={{ color: '#cfe8ff', whiteSpace: 'nowrap' }}>Tap to talk</span>
+    text = <span style={{ color: '#cfe8ff', whiteSpace: 'nowrap' }}>Tap to start voice</span>
+  } else if (awake && live) {
+    text = <span style={{ color: '#00ff88', whiteSpace: 'nowrap' }}>Listening… speak now</span>
   } else if (live) {
-    text = <span style={{ color: '#7a9cc0', whiteSpace: 'nowrap' }}>Say <b style={{ color: '#00d4ff' }}>“Hey Meta”</b></span>
+    text = <span style={{ color: '#7a9cc0', whiteSpace: 'nowrap' }}>Say <b style={{ color: '#00d4ff' }}>“Hey Meta”</b>{onTalk ? ' · or tap' : ''}</span>
   } else {
     text = <span style={{ color: '#5e82a6' }}>Starting voice…</span>
   }
@@ -61,7 +66,7 @@ export function VoiceHUD({
 
   return (
     <Shell tone={tone} onClick={tappable ? onTalk : undefined}>
-      {tappable && status === 'ready' ? <span aria-hidden style={{ fontSize: 15 }}>🎙</span> : bars}
+      {status === 'ready' && tappable ? <span aria-hidden style={{ fontSize: 15 }}>🎙</span> : bars}
       <span style={{ fontSize: 12.5, color: '#e8f4ff' }}>{text}</span>
     </Shell>
   )

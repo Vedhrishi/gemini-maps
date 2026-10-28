@@ -572,7 +572,7 @@ async def transcribe(
     file: UploadFile = File(...),
 ):
     """Transcribe voice command audio (WebM/WAV from browser)."""
-    _limit(request, "transcribe", 20)
+    _limit(request, "transcribe", 45)
     content = await file.read()
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(413, "Audio too large (max 5MB)")

@@ -25,9 +25,9 @@ import { VEHICLES, money } from './lib/fuel'
 import { trafficSpeech } from './lib/traffic'
 import { rainOnRoute, rainSentence, rainLikely, rainHere, RainOutlook } from './lib/weather'
 import { placeLink, shareText, sharedPlaceFromUrl, clearSharedPlaceFromUrl, ShareResult } from './lib/share'
-import { catFromSpeech, findNearest, fmtDist } from './lib/nearest'
+import { parseNear, searchNearby, fmtDist } from './lib/nearest'
 import { useWebSocket } from './hooks/useWebSocket'
-import { useVoice, speak, WAKE_RE } from './hooks/useVoice'
+import { useVoice, speak, WAKE_RE, parseCommand } from './hooks/useVoice'
 import { useLocation, lastKnown } from './hooks/useLocation'
 import { useIsDesktop } from './hooks/useMediaQuery'
 import { fetchReports, upvoteReport, HazardReport } from './lib/api'
@@ -452,18 +452,29 @@ export default function App() {
         break
       }
       case 'NEAREST': {
-        const cat = catFromSpeech(raw ?? '')
-        if (!cat) { say('What are you looking for? Try nearest petrol pump, restaurant, ATM or hospital.'); break }
+        const q = parseNear(raw ?? '')
+        if (!q.cat) { say('What are you looking for? Try nearest beach, Chinese restaurant, temple, petrol pump or ATM.'); break }
         const u = userPosRef.current
         if (!u.real) { say('I need your location first. Allow location access or pick it on the map.'); break }
-        speak(`Looking for the nearest ${cat.say}`)
-        findNearest(cat, u).then(hits => {
-          const h = hits[0]
-          if (!h) { say(`I couldn't find a ${cat.say} near you.`); return }
-          const more = hits[1] ? ` Next closest is ${hits[1].name}, ${fmtDist(hits[1].km)} away.` : ''
-          say(`Nearest ${cat.say} is ${h.name}, ${fmtDist(h.km)} away. Routing you there.${more}`)
-          navRef.current.plan({ name: loc.manual?.name ?? 'My location', sub: '', lat: u.lat, lng: u.lng }, h)
+        const lbl = q.label.toLowerCase()
+        speak(`Looking for the nearest ${lbl}`)
+        const go = (h: { name: string; lat: number; lng: number }) => {
+          navRef.current.plan({ name: loc.manual?.name ?? 'My location', sub: '', lat: u.lat, lng: u.lng }, h as any)
           setActiveTab('map')
+        }
+        searchNearby(q, u).then(res => {
+          const h = res.hits[0]
+          if (!h) { say(`I couldn't find a ${lbl} within range of you.`); return }
+          if (res.level === 'exact') {
+            const more = res.hits[1] ? ` Next closest is ${res.hits[1].name}, ${fmtDist(res.hits[1].km)} away.` : ''
+            say(`Nearest ${lbl} is ${h.name}, ${fmtDist(h.km)} away. Routing you there.${more}`)
+            go(h)
+          } else if (res.level === 'related') {
+            say(`I couldn't find a ${lbl}. The closest similar place is ${h.name}, ${fmtDist(h.km)} away. Routing you there.`)
+            go(h)
+          } else {
+            say(`I couldn't find a ${lbl}. The closest ${q.cat!.say} is ${h.name}, ${fmtDist(h.km)} away. Say navigate to ${h.name} to go there.`)
+          }
         }).catch(() => say('Search is unavailable right now.'))
         break
       }
@@ -531,10 +542,15 @@ export default function App() {
     }
   }, [toast])
 
-  const { listening, transcript, level, status: voiceStatus, mode: voiceMode, talk } = useVoice({
+  const { listening, transcript, level, status: voiceStatus, mode: voiceMode, talk, awake: voiceAwake } = useVoice({
     onCommand: handleVoiceCommand,
     enabled: voiceEnabled && !booting,
   })
+
+  // Test hook (only with ?debug=1): say a phrase as if spoken
+  useEffect(() => {
+    if (location.search.includes('debug=1')) (window as any).__gmSay = (t: string) => handleVoiceCommand(parseCommand(t), t)
+  }, [handleVoiceCommand])
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
   useEffect(() => {
@@ -852,7 +868,7 @@ export default function App() {
           {activeTab === 'map' && nav.status !== 'trip' && nav.status !== 'arrived' && (
             <VoiceHUD
               status={voiceStatus} transcript={transcript} level={level}
-              enabled={voiceEnabled} onTalk={voiceMode === 'push' ? () => { void talk() } : undefined}
+              enabled={voiceEnabled} awake={voiceAwake} onTalk={voiceMode === 'push' ? () => { void talk() } : undefined}
             />
           )}
         </div>

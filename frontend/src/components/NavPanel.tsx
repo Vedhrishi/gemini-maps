@@ -256,7 +256,7 @@ export function NavPanel({ nav, userPos, locStatus, onRequestLocation, onStartLi
       <div>
         <div style={{ ...label, marginBottom: 7 }}>Nearby</div>
         <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 3, scrollbarWidth: 'none' }}>
-          {NEAR_CATS.map(c => {
+          {NEAR_CATS.filter(c => c.chip).map(c => {
             const on = nearCat?.id === c.id
             return (
               <button key={c.id} onClick={() => showNear(c)} style={{
