@@ -212,6 +212,79 @@ def _mock_analyze(image_bytes: bytes) -> dict:
     }
 
 
+# ── SAM 3.1: outline the hazard in the photo ───────────────────────────────
+# Response format (dev.meta.ai/docs/sam/reading-segmentation): one text line of
+# records like <|box;x1=353;y1=382;x2=453;y2=427;w=537;h=561;c=0.91|><|mask;...|>
+# Box coordinates are source-image pixels; we return them normalised to 0..1.
+
+SAM_MODEL = os.getenv("SAM_MODEL", "sam-3.1")
+_SAM_DOWN_UNTIL = 0.0
+SAM_NOUNS = {
+    "pothole": "pothole", "road_crack": "road crack", "debris": "debris on road",
+    "flood": "flood water", "waterlogging": "water puddle", "accident": "crashed vehicle",
+    "broken_signal": "traffic light", "other": "road damage",
+}
+_BOX = re.compile(r"<\|box;([^|]*)\|>")
+
+
+def parse_sam_boxes(text: str, limit: int = 6) -> list:
+    out = []
+    for m in _BOX.finditer(text or ""):
+        kv = dict(part.split("=", 1) for part in m.group(1).split(";") if "=" in part)
+        try:
+            w, h = float(kv["w"]), float(kv["h"])
+            x1, y1, x2, y2 = (float(kv[k]) for k in ("x1", "y1", "x2", "y2"))
+        except (KeyError, ValueError):
+            continue
+        if w <= 0 or h <= 0 or x2 <= x1 or y2 <= y1:
+            continue
+        box = {"x1": round(x1 / w, 4), "y1": round(y1 / h, 4), "x2": round(x2 / w, 4), "y2": round(y2 / h, 4)}
+        if "c" in kv:
+            try:
+                box["c"] = round(float(kv["c"]), 3)
+            except ValueError:
+                pass
+        out.append(box)
+    out.sort(key=lambda b: -b.get("c", 0))
+    return out[:limit]
+
+
+def segment_hazard_sync(image_bytes: bytes, hazard_type: str):
+    """Ask SAM 3.1 where the hazard is. Returns normalised boxes, or None when SAM is unavailable."""
+    global _SAM_DOWN_UNTIL
+    if active_provider() != "muse" or not (os.getenv("MUSE_API_KEY") or os.getenv("MODEL_API_KEY")):
+        return None
+    if time.time() < _SAM_DOWN_UNTIL:
+        return None
+    import httpx
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    if max(img.size) > 1280:
+        r = 1280 / max(img.size)
+        img = img.resize((int(img.size[0] * r), int(img.size[1] * r)), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    url = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    body = {
+        "model": SAM_MODEL,
+        "input": [{"type": "message", "role": "user", "content": [
+            {"type": "input_text", "text": SAM_NOUNS.get(hazard_type, "road damage")},
+            {"type": "input_image", "image_url": url},
+        ]}],
+        "metadata": {"include_confidence": "true", "mask_encoding": "one_bit"},
+    }
+    try:
+        r = httpx.post(f"{MUSE_BASE}/responses", headers={"Authorization": f"Bearer {_muse_key()}"}, json=body, timeout=20)
+    except httpx.HTTPError as e:
+        print(f"[SAM] {type(e).__name__}")
+        _SAM_DOWN_UNTIL = time.time() + 300
+        return None
+    if r.status_code != 200:
+        print(f"[SAM] HTTP {r.status_code}: {r.text[:200]}")
+        _SAM_DOWN_UNTIL = time.time() + (1800 if r.status_code in (401, 403, 404) else 300)
+        return None
+    return parse_sam_boxes(r.text)
+
+
 # Muse health: after a Muse failure, serve from Gemini for a while instead of
 # paying the failed-call latency on every request. Re-tried automatically.
 _MUSE_DOWN_UNTIL = 0.0

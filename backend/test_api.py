@@ -137,3 +137,26 @@ def test_muse_success_labels_model(monkeypatch):
     monkeypatch.setattr(ai_client, "_muse_analyze", lambda b: {"is_road_hazard": False, "confidence": 0.1})
     out = ai_client.analyze_image_sync(b"img")
     assert out["ai_model"] == "muse-spark" and ai_client.ai_status()["serving"] == "muse"
+
+
+def test_parse_sam_boxes():
+    import ai_client
+    t = ('<0f>0<|box;x1=353;y1=382;x2=453;y2=427;w=537;h=561;c=0.62|><|mask;x=0;y=0;data=46,101,!abc|>,'
+         '1<|box;x1=260;y1=382;x2=340;y2=427;w=537;h=561;c=0.91|><|mask;x=0;y=0;data=46,81,!def|>')
+    b = ai_client.parse_sam_boxes(t)
+    assert len(b) == 2 and b[0]["c"] == 0.91
+    assert abs(b[0]["x1"] - 260 / 537) < 1e-3 and 0 < b[1]["y2"] <= 1
+    assert ai_client.parse_sam_boxes("no boxes here") == []
+    assert ai_client.parse_sam_boxes("<|box;x1=5;y1=5;x2=1;y2=9;w=10;h=10|>") == []  # degenerate
+
+
+def test_report_carries_sam_boxes(monkeypatch):
+    import app as appmod
+    monkeypatch.setattr(appmod, "segment_hazard_sync", lambda b, t: [{"x1": .1, "y1": .2, "x2": .5, "y2": .6, "c": .9}])
+    from PIL import Image
+    import io as _io
+    buf = _io.BytesIO(); Image.new("RGB", (50, 50), (90, 90, 90)).save(buf, format="JPEG")
+    r = c.post("/api/analyze", files={"file": ("p.jpg", buf.getvalue(), "image/jpeg")}, data={"lat": "12.9716", "lng": "77.5946"})
+    j = r.json()
+    assert r.status_code == 200 and j["is_road_hazard"]
+    assert j["report"]["segments"][0]["c"] == .9 and j["report"]["ai_model"] == "mock"

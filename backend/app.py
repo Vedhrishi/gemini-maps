@@ -13,7 +13,7 @@ from typing import List
 import json
 
 from places import gazetteer, detail, load_in_background
-from ai_client import analyze_image_sync, transcribe_audio_sync, active_provider, ai_status
+from ai_client import analyze_image_sync, transcribe_audio_sync, active_provider, ai_status, segment_hazard_sync
 
 load_dotenv()
 
@@ -208,7 +208,7 @@ def _save_report(report: dict) -> dict:
             except Exception:
                 # older table without the voice_summary / suggested_action columns
                 supabase_client.table("hazard_reports").insert({
-                    k: v for k, v in report.items() if k not in ("voice_summary", "suggested_action", "ai_model")
+                    k: v for k, v in report.items() if k not in ("voice_summary", "suggested_action", "ai_model", "segments")
                 }).execute()
         except Exception as e:
             print(f"[DB] insert failed: {e}")
@@ -384,6 +384,7 @@ async def analyze(
             "is_road_hazard": False,
             "confidence": result.get("confidence", 0),
             "voice_summary": "No road hazard detected in this image.",
+            "ai_model": result.get("ai_model", ""),
         }
 
     for key, allowed in (("severity", {"low", "medium", "high", "critical"}),):
@@ -401,6 +402,13 @@ async def analyze(
         return {"is_road_hazard": True, "report": dup, "merged": True}
 
     report = _make_report(result, lat, lng, address[:200])
+    try:  # SAM 3.1 outlines where the hazard is in the photo (skipped when unavailable)
+        boxes = await run_in_threadpool(segment_hazard_sync, content, report["hazard_type"])
+    except Exception as e:
+        print(f"[SAM] failed: {e}")
+        boxes = None
+    if boxes:
+        report["segments"] = boxes
     _save_report(report)
     await ws_manager.broadcast({"event": "new_hazard", "report": report})
     return {"is_road_hazard": True, "report": report, "merged": False}
