@@ -576,7 +576,10 @@ async def transcribe(
     content = await file.read()
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(413, "Audio too large (max 5MB)")
-    mime = file.content_type or "audio/webm"
+    mime = file.content_type or ""
+    if not mime.startswith("audio/"):  # some browsers send octet-stream: trust the extension
+        ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+        mime = {"m4a": "audio/mp4", "mp4": "audio/mp4", "aac": "audio/aac", "wav": "audio/wav", "ogg": "audio/ogg", "mp3": "audio/mpeg"}.get(ext, "audio/webm")
     try:
         text = await run_in_threadpool(transcribe_audio_sync, content, mime)
     except Exception as e:

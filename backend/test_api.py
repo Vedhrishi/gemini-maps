@@ -206,3 +206,11 @@ def test_parse_met_no():
     ]}}
     out = appmod.parse_met_no(j)
     assert [o["mm"] for o in out] == [0.0, 2.4] and out[0]["p"] is None
+
+
+def test_to_wav_handles_iphone_mp4(tmp_path):
+    import subprocess, imageio_ffmpeg, ai_client
+    src = tmp_path / "a.m4a"
+    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-v", "error", "-f", "lavfi", "-i", "sine=f=300:d=1", "-c:a", "aac", str(src)], check=True)
+    wav = ai_client._to_wav(src.read_bytes(), "audio/mp4")
+    assert wav[:4] == b"RIFF" and len(wav) > 20000

@@ -53,7 +53,7 @@ GEMINI_MODELS = list(dict.fromkeys(
 _GEMINI_SKIP_UNTIL: dict = {}  # model -> time; models that just failed are skipped for a while
 
 
-def _gemini_call(parts: list, json_out: bool) -> str:
+def _gemini_call(parts: list, json_out: bool, prefer: list | None = None) -> str:
     """Call the Gemini REST API directly, falling back across models.
 
     Google retires and rate-limits model names, so a model that answers 404 / 429 / 5xx
@@ -64,7 +64,8 @@ def _gemini_call(parts: list, json_out: bool) -> str:
     key = os.environ["GEMINI_API_KEY"]
     last = ""
     now = time.time()
-    models = [m for m in GEMINI_MODELS if _GEMINI_SKIP_UNTIL.get(m, 0) <= now] or GEMINI_MODELS
+    order = list(dict.fromkeys((prefer or []) + GEMINI_MODELS))
+    models = [m for m in order if _GEMINI_SKIP_UNTIL.get(m, 0) <= now] or order
     for model in models:
         cfg: dict = {}
         if json_out:
@@ -85,7 +86,8 @@ def _gemini_call(parts: list, json_out: bool) -> str:
             continue
         if r.status_code == 200:
             try:
-                return "".join(p.get("text", "") for p in r.json()["candidates"][0]["content"]["parts"])
+                parts_out = r.json()["candidates"][0]["content"]["parts"]
+                return "".join(p.get("text", "") for p in parts_out if not p.get("thought"))
             except (KeyError, IndexError):
                 last = f"{model}: empty response"
                 continue
@@ -108,13 +110,28 @@ def _gemini_analyze(image_bytes: bytes) -> dict:
     return _parse_json(text)
 
 
+GEMINI_AUDIO = ("audio/wav", "audio/x-wav", "audio/mp3", "audio/mpeg", "audio/flac", "audio/ogg", "audio/aac")
+
+VOICE_PROMPT = (
+    "This is a short voice command spoken to a navigation app in India (English, possibly with an Indian accent "
+    "and Indian place names). Transcribe exactly what was said. Return only the words, no quotes, no notes. "
+    "If nothing intelligible was said, return an empty string."
+)
+
+
 def _gemini_transcribe(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
-    """Transcribe audio using Gemini (today). Swap to Muse Voice tomorrow."""
-    return _gemini_call(
-        [{"text": "Transcribe this audio exactly. Return only the transcribed text, nothing else."},
-         {"inline_data": {"mime_type": mime_type, "data": base64.b64encode(audio_bytes).decode()}}],
+    """Transcribe a voice command with Gemini. Browsers record WebM (Chrome) or MP4/AAC (iPhone),
+    which Gemini does not take directly, so anything else is converted to 16 kHz WAV first."""
+    mt = (mime_type or "").split(";")[0].strip().lower()
+    if mt not in GEMINI_AUDIO:
+        audio_bytes, mt = _to_wav(audio_bytes, mt or "audio/webm"), "audio/wav"
+    text = _gemini_call(
+        [{"text": VOICE_PROMPT},
+         {"inline_data": {"mime_type": mt, "data": base64.b64encode(audio_bytes).decode()}}],
         json_out=False,
+        prefer=["gemini-3.5-flash-lite", "gemini-flash-lite-latest"],  # short phrases: the fast model is enough
     ).strip()
+    return text.strip('"').strip()
 
 
 # ── Meta Model API (Muse) provider ───────────────────────────────────────────
@@ -170,18 +187,23 @@ def _muse_analyze(image_bytes: bytes) -> dict:
 
 
 def _to_wav(audio_bytes: bytes, mime_type: str) -> bytes:
-    """Muse Voice Transcribe accepts WAV only; browsers record WebM/MP4."""
+    """16 kHz mono WAV for the speech APIs. Browsers record WebM (Chrome) or MP4/AAC (iPhone).
+    Files, not pipes: MP4 keeps its index at the end, so ffmpeg must be able to seek."""
     if "wav" in mime_type:
         return audio_bytes
-    import subprocess, imageio_ffmpeg
-    p = subprocess.run(
-        [imageio_ffmpeg.get_ffmpeg_exe(), "-v", "error", "-i", "pipe:0",
-         "-ac", "1", "-ar", "16000", "-f", "wav", "pipe:1"],
-        input=audio_bytes, capture_output=True, timeout=30,
-    )
-    if p.returncode != 0 or not p.stdout:
-        raise RuntimeError("audio conversion failed")
-    return p.stdout
+    import subprocess, tempfile, imageio_ffmpeg
+    with tempfile.TemporaryDirectory() as d:
+        src, dst = os.path.join(d, "in"), os.path.join(d, "out.wav")
+        with open(src, "wb") as f:
+            f.write(audio_bytes)
+        p = subprocess.run(
+            [imageio_ffmpeg.get_ffmpeg_exe(), "-v", "error", "-y", "-i", src, "-ac", "1", "-ar", "16000", dst],
+            capture_output=True, timeout=30,
+        )
+        if p.returncode != 0 or not os.path.exists(dst) or os.path.getsize(dst) < 1000:
+            raise RuntimeError("audio conversion failed")
+        with open(dst, "rb") as f:
+            return f.read()
 
 
 def _muse_transcribe(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
