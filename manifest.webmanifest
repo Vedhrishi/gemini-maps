@@ -1,6 +1,6 @@
 {
-  "name": "Gemini Maps",
-  "short_name": "Gemini Maps",
+  "name": "Meta Maps",
+  "short_name": "Meta Maps",
   "description": "Road-condition-aware navigation for India with a Guardian rerouting agent.",
   "start_url": "./",
   "scope": "./",
