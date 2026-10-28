@@ -34,3 +34,5 @@ frontend/public/data/streets/
 data-build/india/
 data-build/*.tsv.gz
 *.tar
+
+frontend/node_modules

@@ -32,6 +32,8 @@ export function ReportPanel({ userLat, userLng, triggerCapture, onCaptureHandled
   const [imgUrl, setImgUrl] = useState<string | null>(null)
   const [result, setResult] = useState<HazardReport | null>(null)
   const [notHazard, setNotHazard] = useState(false)
+  const [merged, setMerged] = useState(false)
+  const [checkedBy, setCheckedBy] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [countdown, setCountdown] = useState<number | null>(null)
@@ -151,7 +153,9 @@ export function ReportPanel({ userLat, userLng, triggerCapture, onCaptureHandled
       setAnalyzeProgress(100)
       await new Promise(r => setTimeout(r, 300))
 
+      setCheckedBy(res.report?.ai_model || res.ai_model || '')
       if (res.is_road_hazard && res.report) {
+        setMerged(!!res.merged)
         setResult(res.report)
         setMode('result')
         onNewReport(res.report, res.merged)
@@ -189,6 +193,8 @@ export function ReportPanel({ userLat, userLng, triggerCapture, onCaptureHandled
   }
 
   const reset = () => {
+    setMerged(false)
+    setCheckedBy('')
     stopCamera()
     if (countdownRef.current) clearInterval(countdownRef.current)
     if (progressRef.current) clearInterval(progressRef.current)
@@ -486,6 +492,11 @@ export function ReportPanel({ userLat, userLng, triggerCapture, onCaptureHandled
                 <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>
                   No hazard detected in this image
                 </div>
+                {checkedBy && checkedBy !== 'mock' && (
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
+                    Checked by {providerLabel(checkedBy)}
+                  </div>
+                )}
               </div>
             )}
 
@@ -521,7 +532,18 @@ export function ReportPanel({ userLat, userLng, triggerCapture, onCaptureHandled
 
                   <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {imgUrl && (
-                      <img src={imgUrl} style={{ width: '100%', borderRadius: 8 }} alt="Captured" />
+                      <div style={{ position: 'relative', lineHeight: 0, borderRadius: 8, overflow: 'hidden' }}>
+                        <img src={imgUrl} style={{ width: '100%', display: 'block' }} alt="Reported hazard" />
+                        {result.segments?.map((b, i) => (
+                          <div key={i} aria-hidden style={{
+                            position: 'absolute',
+                            left: `${b.x1 * 100}%`, top: `${b.y1 * 100}%`,
+                            width: `${(b.x2 - b.x1) * 100}%`, height: `${(b.y2 - b.y1) * 100}%`,
+                            border: `2px solid ${c}`, borderRadius: 4,
+                            boxShadow: `0 0 14px ${c}`,
+                          }} />
+                        ))}
+                      </div>
                     )}
                     <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.5 }}>
                       {result.description}
@@ -540,8 +562,17 @@ export function ReportPanel({ userLat, userLng, triggerCapture, onCaptureHandled
                         width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)',
                         display: 'inline-block', animation: 'pulse 1.5s ease infinite',
                       }} />
-                      Live pin added to map for all users
+                      {merged ? 'Already reported here: counted as a confirmation' : 'Live pin added to the map for everyone'}
                     </div>
+                    {(() => {
+                      const credits = [
+                        result.ai_model && result.ai_model !== 'mock' ? `Classified by ${providerLabel(result.ai_model)}` : '',
+                        result.segments?.length ? 'located in the photo by Meta SAM 3.1' : '',
+                      ].filter(Boolean)
+                      if (!credits.length) return null
+                      const text = credits.join(', ')
+                      return <div style={{ fontSize: 11, color: 'var(--text3)' }}>{text[0].toUpperCase() + text.slice(1)}</div>
+                    })()}
                   </div>
                 </div>
               )

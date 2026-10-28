@@ -10,6 +10,7 @@ const HazardMap3D = lazy(loadMap3D)
 loadMap3D()
 import { ReportPanel } from './components/ReportPanel'
 import { HazardList } from './components/HazardList'
+import { AboutSheet } from './components/AboutSheet'
 import { TelemetryBar } from './components/TelemetryBar'
 import { BootSequence } from './components/BootSequence'
 import { VoiceHUD } from './components/VoiceHUD'
@@ -579,17 +580,16 @@ export default function App() {
             {isDesktop && (listening ? 'LISTENING' : voiceEnabled ? 'VOICE ON' : 'VOICE OFF')}
           </button>
 
-          {isDesktop && (
-            <button
-              onClick={() => setShowShortcuts(s => !s)}
-              title="Keyboard shortcuts (?)"
-              style={{
-                background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)',
-                color: 'var(--text3)', width: 28, height: 28, borderRadius: 8,
-                fontSize: 13, fontWeight: 700, display: 'grid', placeItems: 'center',
-              }}
-            >?</button>
-          )}
+          <button
+            onClick={() => setShowShortcuts(s => !s)}
+            title="About, voice commands and shortcuts (?)"
+            aria-label="About Gemini Maps"
+            style={{
+              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)',
+              color: 'var(--text3)', width: isDesktop ? 28 : 36, height: isDesktop ? 28 : 36, borderRadius: 8,
+              fontSize: 13, fontWeight: 700, display: 'grid', placeItems: 'center',
+            }}
+          >?</button>
         </div>
       </header>
 
@@ -761,54 +761,8 @@ export default function App() {
         </div>
       </div>
 
-      {/* ══ SHORTCUTS SHEET ═════════════════════════════════════════════ */}
-      {showShortcuts && (
-        <div
-          onClick={() => setShowShortcuts(false)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 9000,
-            background: 'rgba(2,6,16,0.75)', 
-            display: 'grid', placeItems: 'center', animation: 'fadeIn 0.2s ease',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: 'rgba(6,14,28,0.96)', border: '1px solid rgba(0,212,255,0.2)',
-              borderRadius: 16, padding: '22px 26px', minWidth: 320,
-              boxShadow: '0 24px 64px rgba(0,0,0,0.7)',
-              animation: 'slideUp 0.25s cubic-bezier(0.4,0,0.2,1)',
-            }}
-          >
-            <div style={{
-              fontFamily: 'var(--font2)', fontWeight: 700, fontSize: 15,
-              marginBottom: 16, color: 'var(--accent)',
-            }}>Keyboard Shortcuts</div>
-            {[
-              ['R', 'Report a hazard (opens camera)'],
-              ['M', 'Live map'],
-              ['F', 'Hazard feed'],
-              ['N', 'Navigate — routes, ETA, fuel cost'],
-              ['V', 'Toggle voice recognition'],
-              ['3', 'Switch between 2D and 3D map'],
-              ['?', 'Show this panel'],
-            ].map(([k, label]) => (
-              <div key={k} style={{
-                display: 'flex', alignItems: 'center', gap: 14,
-                padding: '7px 0', fontSize: 13, color: 'var(--text2)',
-              }}>
-                <kbd style={{
-                  background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.22)',
-                  borderRadius: 6, padding: '3px 9px', fontSize: 11, fontWeight: 700,
-                  color: 'var(--accent)', fontFamily: 'var(--font2)', minWidth: 26,
-                  textAlign: 'center',
-                }}>{k}</kbd>
-                {label}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* ══ ABOUT SHEET ═════════════════════════════════════════════════ */}
+      {showShortcuts && <AboutSheet onClose={() => setShowShortcuts(false)} isDesktop={isDesktop} />}
 
       {/* ══ TOASTS ══════════════════════════════════════════════════════ */}
       <div style={{

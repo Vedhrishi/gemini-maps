@@ -21,6 +21,10 @@ export interface HazardReport {
   address?: string
   upvotes: number
   created_at: string
+  /** Which model classified the photo: "muse-spark", "gemini" or "mock". */
+  ai_model?: string
+  /** SAM 3.1 boxes around the hazard, normalised 0..1 to the photo. */
+  segments?: { x1: number; y1: number; x2: number; y2: number; c?: number }[]
 }
 
 export interface AnalyzeResponse {
@@ -29,6 +33,7 @@ export interface AnalyzeResponse {
   merged?: boolean
   confidence?: number
   voice_summary?: string
+  ai_model?: string
 }
 
 export async function analyzeImage(
@@ -73,8 +78,9 @@ export async function fetchProvider(): Promise<string> {
   try {
     const r = await fetch(`${API_URL}/health`, { mode: 'cors', cache: 'no-store' })
     const j = await r.json()
-    return String(j.provider || '')
+    return String(j.serving || j.provider || '')
   } catch { return '' }
 }
 
-export const providerLabel = (p: string) => (p === 'muse' ? 'Muse Spark' : p === 'gemini' ? 'Gemini Vision' : 'AI Vision')
+export const providerLabel = (p: string) =>
+  p.startsWith('muse') ? 'Meta Muse Spark' : p === 'gemini' ? 'Gemini' : 'AI vision'
