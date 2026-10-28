@@ -204,7 +204,7 @@ export function NavPanel({ nav, userPos, locStatus, onRequestLocation, onStartLi
         }}>
           📍 {locStatus === 'denied'
             ? 'Location is blocked. Allow it in your browser settings, then tap here.'
-            : locStatus === 'locating' ? 'Finding your location…' : 'Turn on location so Gemini Maps can navigate from where you are'}
+            : locStatus === 'locating' ? 'Finding your location…' : 'Turn on location so Meta Maps can navigate from where you are'}
         </button>
       )}
 
@@ -323,7 +323,7 @@ export function NavPanel({ nav, userPos, locStatus, onRequestLocation, onStartLi
             background: 'rgba(0,212,255,.05)', border: '1px solid rgba(0,212,255,.12)', color: 'var(--text2)',
           }}>
             Every route is checked against crowd-reported hazards. If a slightly longer road
-            avoids a critical pothole or a flooded stretch, <b style={{ color: 'var(--accent)' }}>Gemini picks it</b>.
+            avoids a critical pothole or a flooded stretch, <b style={{ color: 'var(--accent)' }}>Meta Maps picks it</b>.
           </div>
         </div>
       )}
@@ -372,8 +372,8 @@ export function NavPanel({ nav, userPos, locStatus, onRequestLocation, onStartLi
                       <span key={t} style={{
                         fontSize: 10, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase',
                         padding: '2px 8px', borderRadius: 6,
-                        background: t === 'Gemini pick' ? 'rgba(0,212,255,.16)' : 'rgba(255,255,255,.07)',
-                        color: t === 'Gemini pick' ? 'var(--accent)' : 'var(--text2)',
+                        background: t === 'Best pick' ? 'rgba(0,212,255,.16)' : 'rgba(255,255,255,.07)',
+                        color: t === 'Best pick' ? 'var(--accent)' : 'var(--text2)',
                       }}>{t}</span>
                     ))}
                   </div>

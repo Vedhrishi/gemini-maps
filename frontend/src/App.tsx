@@ -617,7 +617,7 @@ export default function App() {
               background: 'linear-gradient(90deg, #fff 0%, #00d4ff 60%, #0096ff 100%)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
               whiteSpace: 'nowrap',
-            }}>Gemini Maps</div>
+            }}>Meta Maps</div>
             {isDesktop && (
               <div style={{ fontSize: 9.5, color: 'var(--text3)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
                 AI · Real-Time · Road Intelligence
@@ -677,7 +677,7 @@ export default function App() {
           <button
             onClick={() => setShowShortcuts(s => !s)}
             title="About, voice commands and shortcuts (?)"
-            aria-label="About Gemini Maps"
+            aria-label="About Meta Maps"
             style={{
               background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)',
               color: 'var(--text3)', width: isDesktop ? 28 : 36, height: isDesktop ? 28 : 36, borderRadius: 8,

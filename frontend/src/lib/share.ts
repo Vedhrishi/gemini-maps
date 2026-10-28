@@ -1,12 +1,14 @@
 /**
- * Sharing: a place or a trip as a link that opens Gemini Maps with directions to it.
+ * Sharing: a place or a trip as a link that opens Meta Maps with directions to it.
  * Uses the phone's share sheet when there is one (WhatsApp, SMS, Telegram...),
  * otherwise opens WhatsApp Web, otherwise copies to the clipboard.
  */
 
 export type ShareResult = 'shared' | 'whatsapp' | 'copied' | 'cancelled' | 'failed'
 
-const APP_URL = 'https://vedhrishi.github.io/gemini-maps/'
+const APP_URL = typeof location !== 'undefined' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1'
+  ? location.origin + import.meta.env.BASE_URL
+  : 'https://vedhrishi.github.io/meta-maps/'
 
 /** A link that opens the app with this place as the destination. */
 export function placeLink(lat: number, lng: number, label?: string): string {

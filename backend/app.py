@@ -119,7 +119,7 @@ async def lifespan(app: FastAPI):
         print(f"[seed] {len(_reports_store)} sample reports")
     yield
 
-app = FastAPI(title="Gemini Maps API", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="Meta Maps API", version="2.0.0", lifespan=lifespan)
 
 _origins = [o.strip() for o in os.getenv(
     "ALLOWED_ORIGINS",
@@ -420,7 +420,7 @@ async def weather(request: Request, points: str):
             try:
                 r = await client.get("https://api.met.no/weatherapi/locationforecast/2.0/complete",
                                      params={"lat": la, "lon": ln},
-                                     headers={"User-Agent": "GeminiMaps/2.0 github.com/Vedhrishi/gemini-maps"})
+                                     headers={"User-Agent": "MetaMaps/2.0 github.com/Vedhrishi/meta-maps"})
                 hours = parse_met_no(r.json()) if r.status_code == 200 else None
             except Exception:
                 hours = None

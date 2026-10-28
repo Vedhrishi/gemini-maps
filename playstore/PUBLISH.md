@@ -1,15 +1,15 @@
-# Publish Gemini Maps on Google Play (one-time fee US$25)
+# Publish Meta Maps on Google Play (one-time fee US$25)
 
-Your app is a PWA, so the Play Store build is a Trusted Web Activity (TWA): a thin Android shell around https://vedhrishi.github.io/gemini-maps/.
+Your app is a PWA, so the Play Store build is a Trusted Web Activity (TWA): a thin Android shell around https://vedhrishi.github.io/meta-maps/.
 
 ## 0. Before anything: deploy the website
 `cd /d R:\gemini-maps\gemini-maps\frontend` then `npm run deploy`. The Play app loads this live site, so the site must have the new manifest, icons and privacy.html.
 
 ## 1. Build the .aab (easiest: no Android Studio)
-1. Open https://www.pwabuilder.com, enter `https://vedhrishi.github.io/gemini-maps/`, press Start.
+1. Open https://www.pwabuilder.com, enter `https://vedhrishi.github.io/meta-maps/`, press Start.
 2. Package for stores → Android → use the values in `twa-manifest.json` (package id `io.github.vedhrishi.geminimaps`, enable location delegation).
 3. Let PWABuilder generate a signing key. Download the zip: it contains the `.aab`, `signing.keystore` and its password. **Keep the keystore + password safe forever** (losing it means you can never update the app).
-   Alternative (CLI): `npm i -g @bubblewrap/cli`, `bubblewrap init --manifest=https://vedhrishi.github.io/gemini-maps/manifest.webmanifest`, `bubblewrap build`.
+   Alternative (CLI): `npm i -g @bubblewrap/cli`, `bubblewrap init --manifest=https://vedhrishi.github.io/meta-maps/manifest.webmanifest`, `bubblewrap build`.
 
 ## 2. Play Console
 1. Create a developer account at https://play.google.com/console (US$25 one-time, ID verification).
@@ -20,9 +20,9 @@ Your app is a PWA, so the Play Store build is a Trusted Web Activity (TWA): a th
    New personal accounts must run a **closed test with 12+ testers for 14 days** before Production is allowed — start this early.
 
 ## 3. Remove the browser address bar (Digital Asset Links)
-GitHub Pages serves this app under `/gemini-maps/`, but Android verifies the domain root. Do ONE of:
+GitHub Pages serves this app under `/meta-maps/`, but Android verifies the domain root. Do ONE of:
 - Create a repo named `vedhrishi.github.io` and publish `/.well-known/assetlinks.json` there (copy `assetlinks.template.json`, paste the SHA-256 from Play Console → Setup → App signing → "App signing key certificate").
-- Or use a custom domain (e.g. gemini-maps.app) pointing at the Pages site and put `.well-known/assetlinks.json` in `frontend/public/.well-known/`.
+- Or use a custom domain (e.g. meta-maps.app) pointing at the Pages site and put `.well-known/assetlinks.json` in `frontend/public/.well-known/`.
 Until verified the app still works but shows a thin URL bar (Chrome Custom Tab fallback).
 
 ## 4. Backend note

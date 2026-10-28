@@ -1,13 +1,13 @@
 # Google Play listing — copy/paste
 
-**App name (30):** Gemini Maps – Road Hazard AI
+**App name (30):** Meta Maps – Road Hazard AI
 **Short description (80):** Voice-first maps that route around potholes, floods and accidents.
 **Category:** Maps & Navigation   **Tags:** Navigation, Travel
 **Contact email:** deekshith.k.090325@gmail.com
-**Privacy policy URL:** https://vedhrishi.github.io/gemini-maps/privacy.html
+**Privacy policy URL:** https://vedhrishi.github.io/meta-maps/privacy.html
 
 ## Full description
-Most maps tell you the fastest road. Gemini Maps tells you the best road today.
+Most maps tell you the fastest road. Meta Maps tells you the best road today.
 
 Drivers report potholes, waterlogging, accidents and debris with a photo or a voice command; AI classifies the hazard and every route is ranked against it.
 

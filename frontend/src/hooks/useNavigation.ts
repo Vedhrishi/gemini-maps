@@ -124,10 +124,10 @@ export function useNavigation({ reports, toast, speak }: Deps) {
     if (base.length > 1 && Math.abs(base[cheapest].fuel.cost - Math.max(...base.map(o => o.fuel.cost))) > 5) {
       base[cheapest].tags.push('Lowest fuel')
     }
-    // Gemini pick: every hazard point costs two minutes
+    // Best pick: every hazard point costs two minutes
     const pick = base.reduce(
       (b, o, i) => (o.route.duration + o.score * 120 < base[b].route.duration + base[b].score * 120 ? i : b), 0)
-    base[pick].tags.unshift('Gemini pick')
+    base[pick].tags.unshift('Best pick')
     return base
   }, [routes, routeStates, reports, vehicle, vehicleId])
 
@@ -148,7 +148,7 @@ export function useNavigation({ reports, toast, speak }: Deps) {
       setRoutes(rs)
       setPlanId(token)
       setRouteStates(rs.map(() => null))
-      // Gemini's pick becomes the default selection once hazards are known
+      // The best pick becomes the default selection once hazards are known
       setStatus('ready')
       // State lookups for fuel pricing, one route at a time (gentle on the public geocoder)
       for (let i = 0; i < rs.length; i++) {
@@ -169,7 +169,7 @@ export function useNavigation({ reports, toast, speak }: Deps) {
   const userChose = useRef(false)
   useEffect(() => {
     if (status !== 'ready' || userChose.current || options.length === 0) return
-    const pickIdx = options.findIndex(o => o.tags.includes('Gemini pick'))
+    const pickIdx = options.findIndex(o => o.tags.includes('Best pick'))
     if (pickIdx >= 0 && pickIdx !== selected) setSelected(pickIdx)
   }, [options, status, selected])
   useEffect(() => { if (status === 'planning') userChose.current = false }, [status])

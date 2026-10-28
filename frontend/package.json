@@ -1,8 +1,8 @@
 {
-  "name": "gemini-maps",
+  "name": "meta-maps",
   "version": "2.0.0",
   "private": true,
-  "homepage": "https://vedhrishi.github.io/gemini-maps",
+  "homepage": "https://vedhrishi.github.io/meta-maps",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

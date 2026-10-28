@@ -1,15 +1,17 @@
-# Gemini Maps
+# Meta Maps
 
 Navigation that knows about the road, not just the route. Drivers report potholes, flooding, accidents and broken signals with one photo or one sentence. A vision model checks the photo, the hazard appears on every nearby driver's map within seconds, routes are ranked around it, and a Guardian agent reroutes you mid-drive when a serious hazard appears ahead.
 
-**Live app:** https://vedhrishi.github.io/gemini-maps/
+**Live app:** https://vedhrishi.github.io/meta-maps/
 **Built for:** Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026), Indie Developer track, "Build for Your World".
 
-![Gemini Maps: a route across Hyderabad with the nearest petrol pumps](frontend/public/og.jpg)
+Meta Maps is an independent hackathon project. It is not made by, affiliated with or endorsed by Meta Platforms, Inc.
+
+![Meta Maps: a route across Hyderabad with the nearest petrol pumps](frontend/public/og.jpg)
 
 ## Why
 
-Indian roads change faster than any map. A pothole that appeared after last night's rain, a flooded underpass or a dead traffic signal is not in Google Maps or Apple Maps, but the driver who just passed it knows. Gemini Maps turns that knowledge into a shared, AI-verified layer that every route takes into account.
+Indian roads change faster than any map. A pothole that appeared after last night's rain, a flooded underpass or a dead traffic signal is not in Google Maps or Apple Maps, but the driver who just passed it knows. Meta Maps turns that knowledge into a shared, AI-verified layer that every route takes into account.
 
 ## What it does
 
@@ -79,4 +81,4 @@ Backend environment variables: `MUSE_API_KEY` (Meta Model API), `AI_PROVIDER=aut
 - Rain forecast: Open-Meteo, with MET Norway as backup.
 - Hazards come only from user reports. There is no public national pothole dataset, so coverage grows with use.
 
-Privacy policy: https://vedhrishi.github.io/gemini-maps/privacy.html
+Privacy policy: https://vedhrishi.github.io/meta-maps/privacy.html

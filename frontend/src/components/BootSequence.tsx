@@ -80,7 +80,7 @@ export function BootSequence({ onDone }: { onDone: () => void }) {
           fontWeight: 800, fontSize: 34, letterSpacing: '-0.8px',
           background: 'linear-gradient(90deg, #ffffff, #00d4ff)',
           WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-        }}>Gemini Maps</div>
+        }}>Meta Maps</div>
         <div style={{
           fontSize: 10.5, color: '#4a6a8a', letterSpacing: '0.3em',
           textTransform: 'uppercase', marginTop: 6,

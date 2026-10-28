@@ -15,7 +15,7 @@ type Health = {
   supabase?: boolean
 }
 
-const REPO = 'https://github.com/Vedhrishi/gemini-maps'
+const REPO = 'https://github.com/Vedhrishi/meta-maps'
 
 const SHORTCUTS: [string, string][] = [
   ['R', 'Report a hazard'],
@@ -97,7 +97,7 @@ export function AboutSheet({ onClose, isDesktop }: { onClose: () => void; isDesk
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ flex: 1 }}>
             <h2 id="about-title" style={{ margin: 0, fontFamily: 'var(--font2)', fontSize: 19, fontWeight: 700 }}>
-              Gemini Maps
+              Meta Maps
             </h2>
             <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text2)', lineHeight: 1.5 }}>
               Navigation that knows about the pothole, the flooded underpass and the broken signal,
@@ -185,7 +185,7 @@ export function AboutSheet({ onClose, isDesktop }: { onClose: () => void; isDesk
           borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 16, fontSize: 12.5,
         }}>
           <span style={{ color: 'var(--text3)', flexBasis: '100%' }}>
-            Built for the Meta Global AI Developer Hackathon, Oct 26 to Nov 4, 2026.
+            Built for the Meta Global AI Developer Hackathon, Oct 26 to Nov 4, 2026. An independent project, not made by or endorsed by Meta.
           </span>
           <a href={REPO} target="_blank" rel="noopener" style={{ color: 'var(--accent)', fontWeight: 600 }}>Source code on GitHub</a>
           <a href={`${import.meta.env.BASE_URL}privacy.html`} target="_blank" rel="noopener" style={{ color: 'var(--text2)' }}>Privacy</a>
