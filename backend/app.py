@@ -112,6 +112,8 @@ async def lifespan(app: FastAPI):
     else:
         print("[DB] No Supabase config — using in-memory store")
     load_in_background()
+    import threading, ai_client
+    threading.Thread(target=ai_client.probe_muse, daemon=True).start()
     if os.getenv("SEED_DEMO", "0") == "1" and not supabase_client and not _reports_store:
         _seed_reports()
         print(f"[seed] {len(_reports_store)} sample reports")

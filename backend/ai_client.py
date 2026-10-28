@@ -314,6 +314,37 @@ def ai_status() -> dict:
     }
 
 
+def probe_muse() -> None:
+    """At startup, ask Meta Model API which models this key can use, so /health is
+    accurate before the first report instead of claiming Muse is serving."""
+    global _MUSE_DOWN_UNTIL, _MUSE_LAST_ERROR, _MUSE_LAST_OK
+    if active_provider() != "muse":
+        return
+    import httpx
+    try:
+        r = httpx.get(f"{MUSE_BASE}/models", headers={"Authorization": f"Bearer {_muse_key()}"}, timeout=15)
+    except Exception as e:
+        print(f"[AI] Muse probe failed: {type(e).__name__}")
+        return
+    if r.status_code != 200:
+        _MUSE_LAST_ERROR = f"model list HTTP {r.status_code}"
+        _MUSE_DOWN_UNTIL = time.time() + 600
+        return
+    try:
+        ids = {m.get("id") for m in r.json().get("data", [])}
+    except Exception:
+        return
+    if ids & {MUSE_MODEL, "muse-spark-1.2", "muse-wonder-1.0"}:
+        _MUSE_LAST_OK = time.time()
+        _MUSE_DOWN_UNTIL = 0.0
+        _MUSE_LAST_ERROR = ""
+    else:
+        _MUSE_LAST_ERROR = "this Meta Model API key has no Muse models enabled (model list is empty)" if not ids else \
+            f"Muse models not in this key's model list ({len(ids)} other models)"
+        _MUSE_DOWN_UNTIL = time.time() + 1800
+    print(f"[AI] Muse probe: {len(ids)} models; muse ok={_MUSE_DOWN_UNTIL == 0.0}")
+
+
 def _with_fallback(muse_fn, gemini_fn, label: str):
     global _MUSE_DOWN_UNTIL, _MUSE_LAST_ERROR, _MUSE_LAST_OK, _LAST_MODEL
     if time.time() >= _MUSE_DOWN_UNTIL or not _gemini_available():

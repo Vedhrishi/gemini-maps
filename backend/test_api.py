@@ -160,3 +160,21 @@ def test_report_carries_sam_boxes(monkeypatch):
     j = r.json()
     assert r.status_code == 200 and j["is_road_hazard"]
     assert j["report"]["segments"][0]["c"] == .9 and j["report"]["ai_model"] == "mock"
+
+
+def test_probe_marks_muse_down_when_key_has_no_models(monkeypatch):
+    import ai_client, httpx
+    monkeypatch.setenv("AI_PROVIDER", "muse"); monkeypatch.setenv("MUSE_API_KEY", "k"); monkeypatch.setenv("GEMINI_API_KEY", "g")
+    monkeypatch.setattr(ai_client, "_MUSE_DOWN_UNTIL", 0.0)
+    class R:  # what Meta returned for this account
+        status_code = 200
+        def json(self): return {"object": "list", "data": []}
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: R())
+    ai_client.probe_muse()
+    st = ai_client.ai_status()
+    assert st["serving"] == "gemini" and st["muse_ok"] is False and "no Muse models" in st["muse_error"]
+    class R2(R):
+        def json(self): return {"data": [{"id": "muse-spark-1.3"}]}
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: R2())
+    ai_client.probe_muse()
+    assert ai_client.ai_status()["serving"] == "muse"
