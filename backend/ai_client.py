@@ -203,19 +203,70 @@ def _mock_analyze(image_bytes: bytes) -> dict:
     }
 
 
+# Muse health: after a Muse failure, serve from Gemini for a while instead of
+# paying the failed-call latency on every request. Re-tried automatically.
+_MUSE_DOWN_UNTIL = 0.0
+_MUSE_LAST_ERROR = ""
+_MUSE_LAST_OK = 0.0
+_LAST_MODEL = ""
+
+
+def _gemini_available() -> bool:
+    return bool(os.getenv("GEMINI_API_KEY"))
+
+
+def ai_status() -> dict:
+    """What /health reports: configured provider, what is actually serving, and Muse state."""
+    p = active_provider()
+    serving = p
+    if p == "muse" and time.time() < _MUSE_DOWN_UNTIL and _gemini_available():
+        serving = "gemini"
+    return {
+        "provider": p,
+        "serving": serving,
+        "muse_ok": (None if not _MUSE_LAST_OK and not _MUSE_LAST_ERROR else time.time() >= _MUSE_DOWN_UNTIL),
+        "muse_error": _MUSE_LAST_ERROR[:160] if time.time() < _MUSE_DOWN_UNTIL else "",
+        "last_model": _LAST_MODEL,
+    }
+
+
+def _with_fallback(muse_fn, gemini_fn, label: str):
+    global _MUSE_DOWN_UNTIL, _MUSE_LAST_ERROR, _MUSE_LAST_OK, _LAST_MODEL
+    if time.time() >= _MUSE_DOWN_UNTIL or not _gemini_available():
+        try:
+            out = muse_fn()
+            _MUSE_LAST_OK = time.time()
+            _MUSE_LAST_ERROR = ""
+            _LAST_MODEL = label
+            return out, label
+        except Exception as e:
+            _MUSE_LAST_ERROR = f"{type(e).__name__}: {e}"
+            _MUSE_DOWN_UNTIL = time.time() + 600
+            print(f"[AI] Muse failed, falling back to Gemini for 10 min: {_MUSE_LAST_ERROR[:300]}")
+            if not _gemini_available():
+                raise
+    out = gemini_fn()
+    _LAST_MODEL = "gemini"
+    return out, "gemini"
+
+
 def analyze_image_sync(image_bytes: bytes) -> dict:
     p = active_provider()
-    if p == "muse":
-        return _muse_analyze(image_bytes)
     if p == "mock":
-        return _mock_analyze(image_bytes)
-    return _gemini_analyze(image_bytes)
+        out, model = _mock_analyze(image_bytes), "mock"
+    elif p == "muse":
+        out, model = _with_fallback(lambda: _muse_analyze(image_bytes), lambda: _gemini_analyze(image_bytes), "muse-spark")
+    else:
+        out, model = _gemini_analyze(image_bytes), "gemini"
+    out["ai_model"] = model
+    return out
 
 
 def transcribe_audio_sync(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
     p = active_provider()
-    if p == "muse":
-        return _muse_transcribe(audio_bytes, mime_type)
     if p == "mock":
         return "navigate to Charminar"
+    if p == "muse":
+        out, _ = _with_fallback(lambda: _muse_transcribe(audio_bytes, mime_type), lambda: _gemini_transcribe(audio_bytes, mime_type), "muse-voice")
+        return out
     return _gemini_transcribe(audio_bytes, mime_type)

@@ -13,7 +13,7 @@ from typing import List
 import json
 
 from places import gazetteer, detail, load_in_background
-from ai_client import analyze_image_sync, transcribe_audio_sync, active_provider
+from ai_client import analyze_image_sync, transcribe_audio_sync, active_provider, ai_status
 
 load_dotenv()
 
@@ -191,6 +191,7 @@ def _make_report(analysis: dict, lat: float, lng: float, address: str = "") -> d
         "voice_summary": analysis.get("voice_summary", analysis["description"]),
         "suggested_action": analysis.get("suggested_action", "Exercise caution"),
         "confidence": analysis["confidence"],
+        "ai_model": analysis.get("ai_model", ""),
         "lat": lat,
         "lng": lng,
         "address": address or None,
@@ -207,7 +208,7 @@ def _save_report(report: dict) -> dict:
             except Exception:
                 # older table without the voice_summary / suggested_action columns
                 supabase_client.table("hazard_reports").insert({
-                    k: v for k, v in report.items() if k not in ("voice_summary", "suggested_action")
+                    k: v for k, v in report.items() if k not in ("voice_summary", "suggested_action", "ai_model")
                 }).execute()
         except Exception as e:
             print(f"[DB] insert failed: {e}")
@@ -248,7 +249,7 @@ def _upvote(report_id: str) -> int:
 async def health():
     return {
         "status": "ok",
-        "provider": active_provider(),
+        **ai_status(),
         "supabase": bool(supabase_client),
         "connections": len(ws_manager.connections),
         "reports": len(_reports_store),
@@ -435,7 +436,9 @@ async def ai_check(request: Request, deep: int = 0):
     buf = io.BytesIO()
     Image.new("RGB", (64, 64), (128, 128, 128)).save(buf, format="JPEG")
     try:
-        out = await run_in_threadpool(analyze_image_sync, buf.getvalue())
+        import ai_client
+        fn = ai_client._muse_analyze if active_provider() == "muse" else analyze_image_sync
+        out = await run_in_threadpool(fn, buf.getvalue())
         return {"ok": True, "provider": active_provider(), "sample": out}
     except Exception as e:
         return {"ok": False, "provider": active_provider(), "error": f"{type(e).__name__}: {str(e)[:400]}"}

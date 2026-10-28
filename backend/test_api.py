@@ -111,3 +111,29 @@ def test_traffic_flow_parse_and_no_key(monkeypatch):
     with TestClient(appmod.app) as c:
         r = c.get("/api/traffic/flow", params={"points": "17.4,78.4|17.5,78.5"})
         assert r.status_code == 200 and r.json() == {"live": False, "samples": []}
+
+
+def test_muse_falls_back_to_gemini(monkeypatch):
+    import ai_client
+    monkeypatch.setenv("AI_PROVIDER", "muse")
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    monkeypatch.setattr(ai_client, "_MUSE_DOWN_UNTIL", 0.0)
+    def boom(_): raise RuntimeError("404 model not found")
+    monkeypatch.setattr(ai_client, "_muse_analyze", boom)
+    monkeypatch.setattr(ai_client, "_gemini_analyze", lambda b: {"is_road_hazard": True, "hazard_type": "pothole", "severity": "high", "description": "d", "confidence": 0.9})
+    out = ai_client.analyze_image_sync(b"img")
+    assert out["ai_model"] == "gemini"
+    st = ai_client.ai_status()
+    assert st["serving"] == "gemini" and st["muse_ok"] is False
+    # second call skips Muse entirely while it is marked down
+    monkeypatch.setattr(ai_client, "_muse_analyze", lambda b: (_ for _ in ()).throw(AssertionError("should not call")))
+    assert ai_client.analyze_image_sync(b"img")["ai_model"] == "gemini"
+
+
+def test_muse_success_labels_model(monkeypatch):
+    import ai_client
+    monkeypatch.setenv("AI_PROVIDER", "muse")
+    monkeypatch.setattr(ai_client, "_MUSE_DOWN_UNTIL", 0.0)
+    monkeypatch.setattr(ai_client, "_muse_analyze", lambda b: {"is_road_hazard": False, "confidence": 0.1})
+    out = ai_client.analyze_image_sync(b"img")
+    assert out["ai_model"] == "muse-spark" and ai_client.ai_status()["serving"] == "muse"
