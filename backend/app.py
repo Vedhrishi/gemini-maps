@@ -410,6 +410,20 @@ async def analyze(
 async def ai_check(request: Request, deep: int = 0):
     """Diagnostic: runs one tiny vision call and reports the provider's error (never the key)."""
     _limit(request, "aicheck", 6)
+    if deep == 2:
+        gk = os.environ.get("GEMINI_API_KEY", "")
+        res = {}
+        async with httpx.AsyncClient(timeout=60) as c:
+            import ai_client
+            for m in ai_client.GEMINI_MODELS:
+                t = time.time()
+                try:
+                    r = await c.post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
+                                     headers={"x-goog-api-key": gk}, json={"contents": [{"parts": [{"text": "Say ok"}]}]})
+                    res[m] = [r.status_code, round(time.time() - t, 2), r.text[:120] if r.status_code != 200 else ""]
+                except Exception as e:
+                    res[m] = [type(e).__name__, round(time.time() - t, 2)]
+        return res
     if deep:
         key = os.environ.get("MUSE_API_KEY") or os.environ.get("MODEL_API_KEY") or ""
         h = {"Authorization": f"Bearer {key}"}
