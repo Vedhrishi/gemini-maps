@@ -17,7 +17,9 @@ Indian roads change faster than any map. A pothole that appeared after last nigh
 - **Guardian agent.** During a trip it watches the road ahead for new critical or high-severity reports, asks the router for alternatives, compares them, and switches only when the detour is clearly better. It says why, out loud. Tap "Try a drive" to watch it handle a staged blockage (the staged hazard is local to your screen and labelled as simulated).
 - **Hazard-aware routing.** Routes ranked by time, reported hazards and fuel cost, with turn-by-turn voice, speed limits and per-vehicle fuel estimates using state fuel prices.
 - **Traffic.** Live TomTom flow sampled along the route, blended with a typical-traffic model by city, day and hour. When a route is ready it tells you how long the drive will take and whether traffic is unusual.
-- **Voice control.** "Hey Gemini, navigate to Charminar", "how's the traffic", "any hazards ahead", "nearest petrol pump", "reroute", "report pothole" and more. Press `?` in the app for the full list.
+- **Voice control.** "Hey Meta, navigate to Charminar", "how's the traffic", "any hazards ahead", "nearest petrol pump", "reroute", "report pothole" and more. Press `?` in the app for the full list.
+- **Rain on your route.** When a route is ready it checks the forecast for when you will be halfway and when you arrive, shows it on the route card and says it out loud if rain is likely ("will it rain" works any time).
+- **Share and SOS.** Share your location, your arrival time or a place as a link that opens straight into directions (WhatsApp, SMS or anything on the phone's share sheet). The SOS button calls 112, 108 or the 1033 highway helpline in one tap and sends your exact location to someone you trust. "Share my location", "share my ETA" and "emergency" work by voice.
 - **Nearest anything.** Petrol, EV charging, restaurants, ATMs, hospitals, pharmacies, police, parking and more, from data stored on the device, with a live OpenStreetMap search as backup.
 - **India-wide search.** About 4.9 million place and building names across India, split into 1° tiles that the browser downloads on demand and caches, so small-town searches work on weak connections.
 
@@ -74,6 +76,7 @@ Backend environment variables: `MUSE_API_KEY` (Meta Model API), `AI_PROVIDER=aut
 - Map data © OpenStreetMap contributors (ODbL). Tiles by OpenFreeMap and OpenMapTiles. Routing by OSRM. Address search by Photon and Nominatim.
 - India place layer: Overture Maps Foundation, release 2026-10-21.0 (CDLA-Permissive 2.0 and ODbL), plus GeoNames (CC BY 4.0).
 - Live traffic: TomTom Traffic Flow.
+- Rain forecast: Open-Meteo, with MET Norway as backup.
 - Hazards come only from user reports. There is no public national pothole dataset, so coverage grows with use.
 
 Privacy policy: https://vedhrishi.github.io/gemini-maps/privacy.html

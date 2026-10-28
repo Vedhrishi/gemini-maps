@@ -11,6 +11,7 @@ loadMap3D()
 import { ReportPanel } from './components/ReportPanel'
 import { HazardList } from './components/HazardList'
 import { AboutSheet } from './components/AboutSheet'
+import { SosSheet } from './components/SosSheet'
 import { TelemetryBar } from './components/TelemetryBar'
 import { BootSequence } from './components/BootSequence'
 import { VoiceHUD } from './components/VoiceHUD'
@@ -22,9 +23,11 @@ import { useNavigation } from './hooks/useNavigation'
 import { haversine, searchPlaces, DEMO_TRIPS, divergencePoint, fetchRoutes, pointAt, Route, fmtKm, fmtDur, clock } from './lib/routing'
 import { VEHICLES, money } from './lib/fuel'
 import { trafficSpeech } from './lib/traffic'
+import { rainOnRoute, rainSentence, rainLikely, rainHere, RainOutlook } from './lib/weather'
+import { placeLink, shareText, sharedPlaceFromUrl, clearSharedPlaceFromUrl, ShareResult } from './lib/share'
 import { catFromSpeech, findNearest, fmtDist } from './lib/nearest'
 import { useWebSocket } from './hooks/useWebSocket'
-import { useVoice, speak } from './hooks/useVoice'
+import { useVoice, speak, WAKE_RE } from './hooks/useVoice'
 import { useLocation, lastKnown } from './hooks/useLocation'
 import { useIsDesktop } from './hooks/useMediaQuery'
 import { fetchReports, upvoteReport, HazardReport } from './lib/api'
@@ -49,6 +52,9 @@ export default function App() {
   const [demoMode, setDemoMode] = useState(false)
   const [reportRate, setReportRate] = useState(0)
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [showSos, setShowSos] = useState(false)
+  /** Rain forecast for the planned route: key = plan id, done = forecast answered (or failed). */
+  const [rain, setRain] = useState<{ key: number; outlook: RainOutlook; done: boolean }>({ key: -1, outlook: null, done: false })
   // 3D is the base view; 2D stays available as a fallback and for low-end devices
   const [map3d, setMap3d] = useState(true)
 
@@ -287,15 +293,87 @@ export default function App() {
   const spokenFor = useRef('')
   useEffect(() => {
     if (nav.status !== 'ready' || !nav.trafficReady || !nav.current || !nav.to || !voiceEnabled) return
+    if (rain.key !== nav.planId || !rain.done) return
     const key = `${nav.to.lat.toFixed(4)},${nav.to.lng.toFixed(4)}|${nav.from?.lat.toFixed(3)},${nav.from?.lng.toFixed(3)}`
     if (spokenFor.current === key) return
     spokenFor.current = key
-    speak(trafficSpeech(nav.current.route, nav.to.name, nav.current.hazards.length))
-  }, [nav.status, nav.trafficReady, nav.current, nav.to, nav.from, voiceEnabled])
+    const wet = rainLikely(rain.outlook) ? ' ' + rainSentence(rain.outlook) : ''
+    speak(trafficSpeech(nav.current.route, nav.to.name, nav.current.hazards.length) + wet)
+  }, [nav.status, nav.trafficReady, nav.current, nav.to, nav.from, voiceEnabled, rain, nav.planId])
+
+  // Rain on the route, once per planned route (never blocks the trip: gives up after 7 s)
+  useEffect(() => {
+    if (nav.status !== 'ready' || !nav.current) return
+    const key = nav.planId
+    if (rain.key === key) return
+    setRain({ key, outlook: null, done: false })
+    let alive = true
+    rainOnRoute(nav.current.route)
+      .then(o => { if (alive) setRain({ key, outlook: o, done: true }) })
+      .catch(() => { if (alive) setRain({ key, outlook: null, done: true }) })
+    return () => { alive = false }
+  }, [nav.status, nav.current, nav.planId])
   useEffect(() => { if (nav.status === 'idle') spokenFor.current = '' }, [nav.status])
 
   // Routes are drawn on the 3D map, so make sure it is the one showing
   useEffect(() => { if (nav.status !== 'idle') setMap3d(true) }, [nav.status])
+
+  // ── Sharing and emergency ─────────────────────────────────────────────
+  const shareToast = useCallback((r: ShareResult, what: string) => {
+    if (r === 'shared' || r === 'whatsapp') toast(`📤 ${what} ready to send`, 'success')
+    else if (r === 'copied') toast(`📋 ${what} copied. Paste it in WhatsApp or SMS`, 'success')
+    else if (r === 'failed') toast(`Could not open sharing. Tap the share button instead`, 'warn')
+  }, [toast])
+
+  const shareLocation = useCallback(async () => {
+    const f = loc.fix
+    if (!f) { loc.request(); toast('📍 Allow location access to share where you are', 'warn'); return }
+    const name = loc.manual?.name
+    const text = name ? `I'm at ${name}.` : `I'm here (accurate to about ${Math.max(5, Math.round(f.accuracy ?? 20))} m).`
+    shareToast(await shareText('My location', `${text} Open for directions:`, placeLink(f.lat, f.lng, name ?? 'My location')), 'Your location')
+  }, [loc, toast, shareToast])
+
+  const shareEta = useCallback(async () => {
+    const n = navRef.current
+    if (!n.current || !n.to) { toast('Plan a route first, then share your arrival time', 'info'); return }
+    const driving = n.status === 'trip'
+    const secs = driving ? n.remainingSec : n.current.route.duration
+    const left = driving ? n.remainingM : n.current.route.distance
+    const text = `${driving ? 'On my way' : 'Leaving soon'} to ${n.to.name}. Arriving around ${clock(secs * 1000)} (${fmtKm(left)} away).`
+    shareToast(await shareText('My ETA', text, placeLink(n.to.lat, n.to.lng, n.to.name)), 'Your arrival time')
+  }, [toast, shareToast])
+
+  const shareDestination = useCallback(async () => {
+    const n = navRef.current
+    if (!n.to) return
+    shareToast(await shareText(n.to.name, `Meet me at ${n.to.name}. Open for directions:`, placeLink(n.to.lat, n.to.lng, n.to.name)), 'The place')
+  }, [shareToast])
+
+  // the voice handler is created once, so it reads these through refs
+  const rainRef = useRef(rain); rainRef.current = rain
+  const shareLocationRef = useRef(shareLocation); shareLocationRef.current = shareLocation
+  const shareEtaRef = useRef(shareEta); shareEtaRef.current = shareEta
+
+  // A shared place link (?at=lat,lng&label=...) opens with directions to it
+  const sharedHandled = useRef(false)
+  useEffect(() => {
+    if (sharedHandled.current) return
+    const place = sharedPlaceFromUrl()
+    if (!place) { sharedHandled.current = true; return }
+    if (!loc.fix && loc.status !== 'denied' && loc.status !== 'unavailable') {
+      const t = setTimeout(() => { if (!sharedHandled.current) { sharedHandled.current = true; planShared(place) } }, 6000)
+      return () => clearTimeout(t)
+    }
+    sharedHandled.current = true
+    planShared(place)
+    function planShared(p: typeof place & {}) {
+      const u = userPosRef.current
+      clearSharedPlaceFromUrl()
+      navRef.current.plan({ name: loc.manual?.name ?? 'My location', sub: '', lat: u.lat, lng: u.lng }, p)
+      setActiveTab('map')
+      toast(`📍 Directions to ${p.name}, shared with you`, 'info')
+    }
+  }, [loc.fix, loc.status, loc.manual, toast])
 
   // ── Voice ───────────────────────────────────────────────────────────────
   const demoDriveFn = useRef<() => void>(() => {})
@@ -316,7 +394,7 @@ export default function App() {
     switch (cmd) {
       case 'WAKE': say(n.status === 'trip' ? 'Yes? I am here and the Guardian is watching.' : 'Yes? I am listening. Say help to hear what I can do.'); break
       case 'NAVIGATE': {
-        const raw0 = (raw ?? '').replace(/^\s*(hey|hi|ok|okay|hello|yo)[ ,]+(gemini maps|gemini|jemini|geminy|gemmy|gemma|jiminy)\b[ ,.!]*/i, '')
+        const raw0 = (raw ?? '').replace(WAKE_RE, '')
         const m = raw0.match(/(?:navigate to|take me to|directions to|drive to|route to|go to|find)\s+(.+)/i)
         const dest = m?.[1]?.replace(/[.?!]+$/, '').trim()
         if (!dest) { speak('Where would you like to go?'); break }
@@ -410,7 +488,23 @@ export default function App() {
       case 'REPEAT':
         if (n.current && n.to) speak(trafficSpeech(n.current.route, n.to.name, n.current.hazards.length)); break
       case 'ASK_COUNT': say(`${reportsRef.current.length} hazards reported`); break
-      case 'HELP': say('Try: navigate to a place, start trip, how far, speed limit, any hazards ahead, report pothole, zoom in, or street view.'); break
+      case 'HELP': say('Try: navigate to a place, nearest petrol pump, how is the traffic, will it rain, share my location, any hazards ahead, report pothole, or reroute.'); break
+      case 'SOS': setShowSos(true); say('Emergency. Call 112 for police, fire or ambulance. Tap send my location to share where you are.'); break
+      case 'SHARE_LOCATION': void shareLocationRef.current(); break
+      case 'SHARE_ETA': void shareEtaRef.current(); break
+      case 'WEATHER': {
+        const rn = rainRef.current
+        if (n.current && rn.key === n.planId && rn.done) { say(rainSentence(rn.outlook)); break }
+        const u = userPosRef.current
+        if (n.current) {
+          say('Checking the rain forecast for your route.')
+          rainOnRoute(n.current.route).then(o => speak(rainSentence(o))).catch(() => speak('I could not get the rain forecast right now.'))
+        } else {
+          say('Checking the rain forecast here.')
+          rainHere(u.lat, u.lng).then(speak).catch(() => speak('I could not get the rain forecast right now.'))
+        }
+        break
+      }
       case 'REPORT_HAZARD': setVoiceTrigger(true); setActiveTab('report'); break
       case 'ZOOM_IN': camera('zoomIn'); break
       case 'ZOOM_OUT': camera('zoomOut'); break
@@ -452,7 +546,7 @@ export default function App() {
         case 'v': setVoiceEnabled(v => !v); break
         case '3': setMap3d(v => !v); break
         case '?': setShowShortcuts(s => !s); break
-        case 'escape': setShowShortcuts(false); break
+        case 'escape': setShowShortcuts(false); setShowSos(false); break
       }
     }
     window.addEventListener('keydown', onKey)
@@ -668,7 +762,27 @@ export default function App() {
             </Suspense>
           )}
 
-          <TripHUD nav={nav} isDesktop={isDesktop} onStartLive={startLive} />
+          <TripHUD
+            nav={nav} isDesktop={isDesktop} onStartLive={startLive}
+            rain={rain.key === nav.planId ? rain.outlook : null}
+            onShareEta={shareEta} onShareDestination={shareDestination} onSos={() => setShowSos(true)}
+          />
+
+          {/* Emergency and share-my-location, one tap away when not driving */}
+          {!nav.trip && (
+            <div style={{ position: 'absolute', left: 14, bottom: 120, zIndex: 6, display: 'flex', gap: 8 }}>
+              <button onClick={() => setShowSos(true)} aria-label="Emergency" title="Emergency numbers and share your location" style={{
+                height: 40, padding: '0 14px', borderRadius: 20, fontWeight: 800, fontSize: 13, letterSpacing: '.04em',
+                background: 'rgba(40,4,14,.92)', border: '1px solid rgba(255,51,85,.6)', color: '#ff5c77',
+                boxShadow: '0 6px 20px rgba(0,0,0,.45)',
+              }}>SOS</button>
+              <button onClick={shareLocation} aria-label="Share my location" title="Send your location on WhatsApp or SMS" style={{
+                height: 40, padding: '0 14px', borderRadius: 20, fontWeight: 700, fontSize: 13,
+                background: 'rgba(2,6,22,.92)', border: '1px solid rgba(0,212,255,.3)', color: 'var(--text2)',
+                boxShadow: '0 6px 20px rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', gap: 6,
+              }}><span aria-hidden>📤</span>{isDesktop ? 'Share location' : 'Share'}</button>
+            </div>
+          )}
 
           {/* Search entry — the first thing a driver reaches for */}
           {nav.status === 'idle' && (
@@ -763,6 +877,7 @@ export default function App() {
 
       {/* ══ ABOUT SHEET ═════════════════════════════════════════════════ */}
       {showShortcuts && <AboutSheet onClose={() => setShowShortcuts(false)} isDesktop={isDesktop} />}
+      {showSos && <SosSheet onClose={() => setShowSos(false)} onShareLocation={shareLocation} hasFix={!!loc.fix} isDesktop={isDesktop} />}
 
       {/* ══ TOASTS ══════════════════════════════════════════════════════ */}
       <div style={{

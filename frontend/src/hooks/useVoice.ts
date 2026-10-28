@@ -1,12 +1,11 @@
 /**
  * useVoice — hands-free voice control hook
  *
- * TODAY: Web Speech API (browser built-in) for recognition + SpeechSynthesis for TTS
- * TOMORROW: swap recognition to call /api/transcribe (Muse Voice Transcribe 1.0)
- *           swap TTS to call Muse TTS endpoint
+ * Recognition uses the browser's Web Speech API (works hands-free while driving);
+ * replies use SpeechSynthesis. The backend's /api/transcribe (Muse Voice Transcribe)
+ * is available for server-side transcription.
  *
- * Activation phrase: "report hazard" → triggers camera capture + AI analysis
- * Also: "zoom in", "zoom out", "list hazards"
+ * Wake phrase: "Hey Meta". See VOICE_COMMANDS for everything it understands.
  */
 
 import { useRef, useCallback, useEffect, useState } from 'react'
@@ -19,7 +18,7 @@ interface UseVoiceOptions {
 }
 
 export const VOICE_COMMANDS: { phrase: string; does: string }[] = [
-  { phrase: 'Hey Gemini', does: 'Wake me — I answer back' },
+  { phrase: 'Hey Meta', does: 'Wake me — I answer back' },
   { phrase: 'navigate to <place>', does: 'Plan a route anywhere' },
   { phrase: 'start trip · stop trip · pause · resume', does: 'Drive controls' },
   { phrase: 'how far · how long · when do I arrive', does: 'Trip answers' },
@@ -35,11 +34,17 @@ export const VOICE_COMMANDS: { phrase: string; does: string }[] = [
   { phrase: 'zoom in · zoom out · fit · top view · street view', does: 'Map camera' },
   { phrase: '2D map · 3D map', does: 'Map mode' },
   { phrase: 'try a drive', does: 'Watch the Guardian reroute' },
+  { phrase: 'will it rain', does: 'Rain on your route' },
+  { phrase: 'share my location · share my ETA', does: 'Send it on WhatsApp or SMS' },
+  { phrase: 'emergency · SOS', does: 'Emergency numbers and share your location' },
   { phrase: 'help', does: 'Hear what you can say' },
 ]
 
 /** Turn a spoken phrase into an intent. Order matters: questions and specifics first. */
-export const WAKE_RE = /^\s*(hey|hi|ok|okay|hello|yo)[ ,]+(gemini|jemini|geminy|gemmy|gemma|jiminy|gemini maps)\b[ ,.!]*/i
+// "Hey Meta" is the wake phrase. Speech engines often hear it as metta / mehta / meda,
+// so those are accepted too; the older "Hey Gemini" still works.
+export const WAKE_NAMES = 'meta maps|gemini maps|meta|metta|mehta|meda|medha|matta|gemini|jemini|geminy'
+export const WAKE_RE = new RegExp(`^\\s*(hey|hi|ok|okay|hello|yo|a)[ ,]+(${WAKE_NAMES})\\b[ ,.!]*`, 'i')
 
 export function parseCommand(text: string): VoiceCommand {
   const wake = text.match(WAKE_RE)
@@ -49,6 +54,11 @@ export function parseCommand(text: string): VoiceCommand {
   }
   const t = text.toLowerCase().replace(/[.?!,]/g, ' ').replace(/\s+/g, ' ').trim()
   const has = (re: RegExp) => re.test(t)
+  const going = has(/\b(navigate to|take me to|directions to|drive to|route to|go to|find|nearest|nearby|closest)\b/)
+  if (!going && has(/\b(sos|emergency)\b|i need help$|^help me$|call (the )?(police|ambulance)|i('m| am) in danger/)) return 'SOS'
+  if (has(/(share|send) (my )?(eta|trip|arrival|journey|ride)|tell (them|him|her|everyone) i'?m (coming|on my way)/)) return 'SHARE_ETA'
+  if (has(/(share|send) (my )?(live |current )?location|share where i am/)) return 'SHARE_LOCATION'
+  if (!going && has(/\b(rain|raining|rainy|weather|umbrella|forecast)\b/)) return 'WEATHER'
   if (has(/\b(nearest|nearby|closest|near me|around me)\b|where can i (eat|get|find|fill)|i('m| am) (hungry|low on (fuel|petrol|diesel))|i need (petrol|fuel|diesel|a (doctor|hospital|atm|mechanic))/)) return 'NEAREST'
   if (has(/where am i|my (current )?location|locate me|find me|show me on the map|centre on me|center on me/)) return 'LOCATE'
   if (has(/^(show|open|go to|switch to) (the )?(report|map|live map|feed|list|navigation|directions)( tab| screen)?$/)) {

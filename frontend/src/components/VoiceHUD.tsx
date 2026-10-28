@@ -59,7 +59,7 @@ export function VoiceHUD({
         </span>
       ) : listening ? (
         <span style={{ fontSize: 12, color: '#7a9cc0', whiteSpace: 'nowrap' }}>
-          Say <span style={{ color: '#00d4ff', fontWeight: 600 }}>“Hey Gemini”</span>
+          Say <span style={{ color: '#00d4ff', fontWeight: 600 }}>“Hey Meta”</span>
         </span>
       ) : (
         <span style={{ fontSize: 12, color: '#5e82a6' }}>Voice paused</span>

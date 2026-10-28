@@ -7,6 +7,7 @@ import { LEVEL_COLOR } from '../lib/traffic'
 import { Nav } from '../hooks/useNavigation'
 import { money } from '../lib/fuel'
 import { fmtKm, fmtDur, clock } from '../lib/routing'
+import { rainy, type RainOutlook } from '../lib/weather'
 
 const glass: React.CSSProperties = {
   background: 'rgba(3,9,20,.9)', 
@@ -50,7 +51,10 @@ function Arrow({ kind, text }: { kind: string; text: string }) {
   return <span style={{ fontSize: 34, lineHeight: 1, color: 'var(--accent)' }}>{glyph}</span>
 }
 
-export function TripHUD({ nav, isDesktop, onStartLive }: { nav: Nav; isDesktop: boolean; onStartLive: () => void }) {
+export function TripHUD({ nav, isDesktop, onStartLive, rain, onShareEta, onShareDestination, onSos }: {
+  nav: Nav; isDesktop: boolean; onStartLive: () => void
+  rain?: RainOutlook; onShareEta?: () => void; onShareDestination?: () => void; onSos?: () => void
+}) {
   const { status, current, trip } = nav
   if (!current) return null
 
@@ -62,24 +66,32 @@ export function TripHUD({ nav, isDesktop, onStartLive }: { nav: Nav; isDesktop: 
         zIndex: 20, borderRadius: 16, padding: isDesktop ? '10px 12px 10px 18px' : '8px 8px 8px 14px', display: 'flex', alignItems: 'center', gap: isDesktop ? 16 : 10,
         width: isDesktop ? 'max-content' : 'calc(100% - 28px)', maxWidth: 'calc(100% - 28px)',
       }}>
-        <div style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap' }}>
+        <div style={{ flex: 1, minWidth: 0, whiteSpace: isDesktop ? 'nowrap' : 'normal', overflow: 'hidden' }}>
           <div style={{ fontFamily: 'var(--font2)', fontWeight: 800, fontSize: 19, letterSpacing: '-.4px' }}>
             {fmtDur(current.route.duration)}
             <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 600, marginLeft: 8 }}>
               {fmtKm(current.route.distance)}
             </span>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 1 }}>
-            <span style={{ color: '#ffcc66', fontWeight: 700 }}>⛽ ~{money(current.fuel.cost, current.fuel.currency)}</span>
+          <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 1, lineHeight: 1.45 }}>
+            <span style={{ color: '#ffcc66', fontWeight: 700, whiteSpace: 'nowrap' }}>⛽ ~{money(current.fuel.cost, current.fuel.currency)}</span>
             {' · '}
-            <span style={{ color: current.hazards.length ? '#ffaa00' : '#00ff88' }}>
+            <span style={{ color: current.hazards.length ? '#ffaa00' : '#00ff88', whiteSpace: 'nowrap' }}>
               {current.hazards.length ? `${current.hazards.length} hazard${current.hazards.length > 1 ? 's' : ''}${isDesktop ? ' on route' : ''}` : 'no hazards'}
             </span>
             {current.route.traffic && (
               <>
                 {' · '}
-                <span style={{ color: LEVEL_COLOR[current.route.traffic.level], fontWeight: 700 }}>
+                <span style={{ color: LEVEL_COLOR[current.route.traffic.level], fontWeight: 700, whiteSpace: 'nowrap' }}>
                   {current.route.traffic.level} traffic
+                </span>
+              </>
+            )}
+            {rain && rainy(rain) && (
+              <>
+                {' · '}
+                <span title={`Rain forecast ${rain.where}`} style={{ color: '#7cc4ff', fontWeight: 700 }}>
+                  🌧 {rain.prob != null ? `${rain.prob}%` : 'rain'}{isDesktop && rain.prob != null ? ' rain' : ''}
                 </span>
               </>
             )}
@@ -90,6 +102,12 @@ export function TripHUD({ nav, isDesktop, onStartLive }: { nav: Nav; isDesktop: 
           background: 'linear-gradient(135deg,#0050ff,#00b4ff)', boxShadow: '0 4px 18px rgba(0,120,255,.45)',
           whiteSpace: 'nowrap',
         }}>▶ Start</button>
+        {onShareDestination && (
+          <button onClick={onShareDestination} title="Share this place" aria-label="Share this place" style={{
+            background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', color: 'var(--text2)',
+            borderRadius: 10, height: 38, width: 38, flexShrink: 0, fontSize: 15,
+          }}>📤</button>
+        )}
         <button onClick={nav.clear} title="Cancel" style={{
           background: 'transparent', border: 'none', color: 'var(--text3)', fontSize: 20, padding: '0 4px',
         }}>×</button>
@@ -250,6 +268,12 @@ export function TripHUD({ nav, isDesktop, onStartLive }: { nav: Nav; isDesktop: 
             <button onClick={() => nav.patchTrip({ follow: !trip.follow })} style={ctl(trip.follow)}>
               {trip.follow ? '◉ Following' : '○ Follow'}
             </button>
+          )}
+          {!arrived && onShareEta && (
+            <button onClick={onShareEta} style={ctl(false)} title="Send your arrival time">📤 Share ETA</button>
+          )}
+          {!arrived && onSos && (
+            <button onClick={onSos} style={{ ...ctl(false), color: '#ff5c77', borderColor: 'rgba(255,51,85,.45)' }} title="Emergency">SOS</button>
           )}
           <button onClick={arrived ? nav.clear : nav.stopTrip} style={{
             ...ctl(false), marginLeft: 'auto', color: '#ff8aa8', borderColor: 'rgba(255,34,102,.35)',
