@@ -114,7 +114,7 @@ function PlaceInput({
       {open && (results.length > 0 || failed || canOffer) && (
         <div style={{
           position: 'absolute', left: 0, right: 0, top: 'calc(100% + 4px)', zIndex: 50,
-          background: 'rgba(6,14,28,.98)', border: '1px solid rgba(0,212,255,.22)',
+          background: '#060e1c', border: '1px solid rgba(0,212,255,.22)', isolation: 'isolate',
           borderRadius: 11, overflow: 'hidden', boxShadow: '0 16px 40px rgba(0,0,0,.7)',
         }}>
           {failed && (
@@ -153,7 +153,7 @@ function PlaceInput({
                 padding: '10px 13px', color: 'var(--accent)', fontSize: 13, fontWeight: 600,
               }}
             >
-              {addAt ? `＋ “${typed}” isn't on the map. Save it at my location` : 'Missing place? Turn on location to add it where you stand'}
+              {addAt ? `＋ Not listed? Save “${typed}” where you are standing` : 'Missing place? Turn on location to add it where you stand'}
             </button>
           )}
           {added && <div style={{ padding: '8px 13px', fontSize: 12, color: '#00ff88' }}>Saved. It will now show up in search.</div>}
