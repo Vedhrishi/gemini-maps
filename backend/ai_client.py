@@ -46,42 +46,51 @@ def _parse_json(text: str) -> dict:
 
 # ── Gemini provider ───────────────────────────────────────────────────────────
 
-GEMINI_MODELS = [m for m in [os.getenv("GEMINI_MODEL")] if m] + ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"]
+GEMINI_MODELS = list(dict.fromkeys(
+    [m for m in [os.getenv("GEMINI_MODEL")] if m]
+    + ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-flash-latest"]
+))
+_GEMINI_SKIP_UNTIL: dict = {}  # model -> time; models that just failed are skipped for a while
 
 
 def _gemini_call(parts: list, json_out: bool) -> str:
     """Call the Gemini REST API directly, falling back across models.
 
-    Google retires model names (gemini-2.0-flash is already gone), so the list
-    starts with the `-latest` alias and falls back on 404 / 429 / 5xx.
+    Google retires and rate-limits model names, so a model that answers 404 / 429 / 5xx
+    is skipped for 15 minutes and the next one is tried at once (no sleeping), keeping
+    a report's analysis to a few seconds.
     """
     import httpx
     key = os.environ["GEMINI_API_KEY"]
-    body = {"contents": [{"parts": parts}]}
-    if json_out:
-        body["generationConfig"] = {"responseMimeType": "application/json", "temperature": 0.2}
     last = ""
-    for model in GEMINI_MODELS:
-        for attempt in range(2):
+    now = time.time()
+    models = [m for m in GEMINI_MODELS if _GEMINI_SKIP_UNTIL.get(m, 0) <= now] or GEMINI_MODELS
+    for model in models:
+        cfg: dict = {}
+        if json_out:
+            cfg.update({"responseMimeType": "application/json", "temperature": 0.2})
+        if model.startswith("gemini-3"):
+            cfg["thinkingConfig"] = {"thinkingLevel": "low"}  # classification needs little reasoning
+        body = {"contents": [{"parts": parts}]}
+        if cfg:
+            body["generationConfig"] = cfg
+        try:
+            r = httpx.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                headers={"x-goog-api-key": key}, json=body, timeout=25,
+            )
+        except httpx.HTTPError as e:
+            last = f"{model}: {type(e).__name__}"
+            _GEMINI_SKIP_UNTIL[model] = time.time() + 300
+            continue
+        if r.status_code == 200:
             try:
-                r = httpx.post(
-                    f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                    headers={"x-goog-api-key": key}, json=body, timeout=40,
-                )
-            except httpx.HTTPError as e:
-                last = f"{model}: {type(e).__name__}"
+                return "".join(p.get("text", "") for p in r.json()["candidates"][0]["content"]["parts"])
+            except (KeyError, IndexError):
+                last = f"{model}: empty response"
                 continue
-            if r.status_code == 200:
-                data = r.json()
-                try:
-                    return "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
-                except (KeyError, IndexError):
-                    last = f"{model}: empty response"
-                    break
-            last = f"{model}: HTTP {r.status_code}"
-            if r.status_code in (404, 400):
-                break  # try the next model
-            time.sleep(1.2 * (attempt + 1))
+        last = f"{model}: HTTP {r.status_code}"
+        _GEMINI_SKIP_UNTIL[model] = time.time() + 900
     raise RuntimeError(f"Gemini unavailable ({last})")
 
 
@@ -132,7 +141,7 @@ def _muse_analyze(image_bytes: bytes) -> dict:
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
     b64 = base64.b64encode(buf.getvalue()).decode()
-    client = OpenAI(api_key=_muse_key(), base_url=MUSE_BASE, timeout=45)
+    client = OpenAI(api_key=_muse_key(), base_url=MUSE_BASE, timeout=30, max_retries=0)
     messages = [{
         "role": "user",
         "content": [
@@ -241,7 +250,7 @@ def _with_fallback(muse_fn, gemini_fn, label: str):
             return out, label
         except Exception as e:
             _MUSE_LAST_ERROR = f"{type(e).__name__}: {e}"
-            _MUSE_DOWN_UNTIL = time.time() + 600
+            _MUSE_DOWN_UNTIL = time.time() + (1800 if "not found" in str(e).lower() else 300)
             print(f"[AI] Muse failed, falling back to Gemini for 10 min: {_MUSE_LAST_ERROR[:300]}")
             if not _gemini_available():
                 raise
