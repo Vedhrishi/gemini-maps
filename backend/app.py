@@ -365,6 +365,29 @@ def parse_open_meteo(j: dict, hours: int = 12) -> list:
     return out
 
 
+def parse_met_no(j: dict, hours: int = 12) -> list:
+    """MET Norway locationforecast -> [{t, p: None, mm}] (MET gives rain amounts, not probabilities, outside Scandinavia)."""
+    ts = ((j or {}).get("properties") or {}).get("timeseries") or []
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    out = []
+    for e in ts:
+        try:
+            at = datetime.fromisoformat(e["time"].replace("Z", "+00:00"))
+        except (KeyError, ValueError):
+            continue
+        if at < now:
+            continue
+        n1 = (e.get("data") or {}).get("next_1_hours")
+        if not n1:
+            break  # past the hourly part of the forecast
+        mm = (n1.get("details") or {}).get("precipitation_amount")
+        prob = (n1.get("details") or {}).get("probability_of_precipitation")
+        out.append({"t": at.isoformat(), "p": int(prob) if prob is not None else None, "mm": float(mm) if mm is not None else None})
+        if len(out) >= hours:
+            break
+    return out
+
+
 @app.get("/api/weather")
 async def weather(request: Request, points: str):
     """Hourly rain forecast for up to 3 points ("lat,lng|lat,lng"), next 12 hours, cached 20 min per ~10 km cell."""
@@ -383,14 +406,24 @@ async def weather(request: Request, points: str):
         hit = _wx_cache.get((la, ln))
         if hit and now - hit[0] < 1200:
             return hit[1]
-        try:
+        hours = None
+        try:  # Open-Meteo gives the chance of rain; it rate-limits shared cloud IPs, so MET Norway is the backup
             r = await client.get("https://api.open-meteo.com/v1/forecast", params={
                 "latitude": la, "longitude": ln, "hourly": "precipitation_probability,precipitation",
                 "forecast_hours": 14, "timezone": "UTC",
             })
-            hours = parse_open_meteo(r.json()) if r.status_code == 200 else None
+            if r.status_code == 200 and not r.json().get("error"):
+                hours = parse_open_meteo(r.json()) or None
         except Exception:
             hours = None
+        if hours is None:
+            try:
+                r = await client.get("https://api.met.no/weatherapi/locationforecast/2.0/complete",
+                                     params={"lat": la, "lon": ln},
+                                     headers={"User-Agent": "GeminiMaps/2.0 github.com/Vedhrishi/gemini-maps"})
+                hours = parse_met_no(r.json()) if r.status_code == 200 else None
+            except Exception:
+                hours = None
         if hours is not None:
             _wx_cache[(la, ln)] = (now, hours)
             if len(_wx_cache) > 3000:

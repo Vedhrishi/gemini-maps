@@ -192,3 +192,17 @@ def test_parse_open_meteo_skips_past_hours():
 def test_weather_endpoint_handles_bad_points(monkeypatch):
     r = c.get("/api/weather", params={"points": "abc|999,999"})
     assert r.status_code == 200 and r.json() == {"points": []}
+
+
+def test_parse_met_no():
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    f = lambda k: (now + timedelta(hours=k)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    j = {"properties": {"timeseries": [
+        {"time": f(-1), "data": {"next_1_hours": {"details": {"precipitation_amount": 9}}}},
+        {"time": f(0), "data": {"next_1_hours": {"details": {"precipitation_amount": 0.0}}}},
+        {"time": f(1), "data": {"next_1_hours": {"details": {"precipitation_amount": 2.4}}}},
+        {"time": f(7), "data": {"next_6_hours": {"details": {"precipitation_amount": 3}}}},
+    ]}}
+    out = appmod.parse_met_no(j)
+    assert [o["mm"] for o in out] == [0.0, 2.4] and out[0]["p"] is None
