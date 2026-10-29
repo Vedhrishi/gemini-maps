@@ -174,7 +174,7 @@ export function AboutSheet({ onClose, isDesktop }: { onClose: () => void; isDesk
           <p style={{ margin: 0, fontSize: 12, color: 'var(--text3)', lineHeight: 1.6 }}>
             Map data © OpenStreetMap contributors (ODbL), tiles by OpenFreeMap and OpenMapTiles.
             About 4.9 million Indian place and building names from Overture Maps and OpenStreetMap,
-            searched on your device. Routing by OSRM, address search by Photon and
+            searched on your device. In Telangana, every building and place that has a name in that data is labelled on the map as you zoom in (buildings nobody has named stay unlabelled). Routing by OSRM, address search by Photon and
             Nominatim. Live traffic from TomTom where available, otherwise a time-of-day estimate. Rain forecast from Open-Meteo and MET Norway. Fuel prices are
             per state averages and may be out of date.
           </p>

@@ -40,6 +40,57 @@ interface Props {
   friends?: { id: string; name: string; color: string; lat: number; lng: number; heading: number | null; speed: number | null }[]
 }
 
+
+// ── Building and place names ──────────────────────────────────────────────────
+// Telangana's named buildings and the businesses inside them, cut into z13 tiles (see tools/build_names.py).
+// Tiles load as the map moves, only at street zoom, and feed one label source.
+const NAMES_Z = 13
+const NAMES_BASE = `${import.meta.env.BASE_URL}data/names/`
+type NameTile = { b: [string, number, number, string, number][]; p: [string, number, number][] }
+const nameTiles = new Map<string, NameTile | null>()
+const nameLoading = new Set<string>()
+
+const lngToX = (lng: number) => Math.floor(((lng + 180) / 360) * 2 ** NAMES_Z)
+const latToY = (lat: number) => {
+  const r = (lat * Math.PI) / 180
+  return Math.floor(((1 - Math.asinh(Math.tan(r)) / Math.PI) / 2) * 2 ** NAMES_Z)
+}
+
+function nameFeatures(): any {
+  const feats: any[] = []
+  nameTiles.forEach(t => {
+    if (!t) return
+    for (const [name, lat, lng, sub, fl] of t.b) feats.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { n: name, k: 'b', s: sub, f: fl } })
+    for (const [name, lat, lng] of t.p) feats.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: { n: name, k: 'p' } })
+  })
+  return { type: 'FeatureCollection', features: feats }
+}
+
+async function refreshNames(map: MLMap) {
+  if (map.getZoom() < 14.8 || !map.getSource('names')) return
+  const b = map.getBounds()
+  const x0 = lngToX(b.getWest()), x1 = lngToX(b.getEast()), y0 = latToY(b.getNorth()), y1 = latToY(b.getSouth())
+  if ((x1 - x0 + 1) * (y1 - y0 + 1) > 30) return
+  const want: string[] = []
+  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) want.push(`${x}_${y}`)
+  const missing = want.filter(k => !nameTiles.has(k) && !nameLoading.has(k))
+  if (missing.length === 0) return
+  await Promise.all(missing.map(async k => {
+    nameLoading.add(k)
+    try {
+      const r = await fetch(`${NAMES_BASE}${k}.json`)
+      nameTiles.set(k, r.ok ? ((await r.json()) as NameTile) : null) // no file means nothing named here
+    } catch { /* offline: try again on the next move */ }
+    nameLoading.delete(k)
+  }))
+  // keep memory bounded: forget tiles far from view once there are many
+  if (nameTiles.size > 80) {
+    const keep = new Set(want)
+    for (const k of [...nameTiles.keys()]) { if (!keep.has(k) && nameTiles.size > 60) nameTiles.delete(k) }
+  }
+  ;(map.getSource('names') as maplibregl.GeoJSONSource | undefined)?.setData(nameFeatures())
+}
+
 const DEFAULT_PITCH = 55
 const DEFAULT_BEARING = -18
 
@@ -390,6 +441,40 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
       })
       map.addLayer({ id: 'tomtom-flow', type: 'raster', source: 'tomtom-flow',
         layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 150 } }, 'route-alt')
+
+      // Names of buildings and of the places inside them. Added last so they sit above the 3D buildings;
+      // the map decides which labels fit, tallest and most important first.
+      map.addSource('names', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+      const halo = { 'text-halo-color': '#020610', 'text-halo-width': 1.7 } as any
+      map.addLayer({ id: 'bldg-names', type: 'symbol', source: 'names', minzoom: 14.8, filter: ['==', ['get', 'k'], 'b'],
+        layout: {
+          'text-field': ['get', 'n'], 'text-font': ['Noto Sans Bold'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 15, 10, 17, 12, 19, 14],
+          'text-max-width': 7, 'text-padding': 2, 'symbol-sort-key': ['-', 0, ['coalesce', ['get', 'f'], 0]],
+        },
+        paint: { 'text-color': '#ffffff', ...halo } })
+      map.addLayer({ id: 'poi-all', type: 'symbol', source: 'openmaptiles', 'source-layer': 'poi', minzoom: 15.5,
+        filter: ['all', ['has', 'name'], ['!', ['in', ['get', 'subclass'], ['literal', ['subway', 'station', 'mall', 'department_store']]]]],
+        layout: {
+          'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 15.5, 9.5, 18, 12],
+          'text-max-width': 7, 'text-padding': 2, 'text-optional': true,
+          'symbol-sort-key': ['coalesce', ['get', 'rank'], 50],
+        },
+        paint: { 'text-color': '#c8e2ff', ...halo } })
+      map.addLayer({ id: 'place-names', type: 'symbol', source: 'names', minzoom: 16.4, filter: ['==', ['get', 'k'], 'p'],
+        layout: {
+          'text-field': ['get', 'n'], 'text-font': ['Noto Sans Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 16.4, 9.5, 19, 12],
+          'text-max-width': 7, 'text-padding': 2, 'text-optional': true,
+        },
+        paint: { 'text-color': '#8fb8dd', ...halo } })
+      map.addLayer({ id: 'house-numbers', type: 'symbol', source: 'openmaptiles', 'source-layer': 'housenumber', minzoom: 17.6,
+        layout: { 'text-field': ['get', 'housenumber'], 'text-font': ['Noto Sans Regular'], 'text-size': 10, 'text-optional': true },
+        paint: { 'text-color': '#6f93b3', ...halo } })
+      map.on('moveend', () => { void refreshNames(map) })
+      map.on('zoomend', () => { void refreshNames(map) })
+      void refreshNames(map)
       setReady(true)
     })
     // Moving the map yourself takes the camera back from the trip follower (like Google Maps):
