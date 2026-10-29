@@ -1,0 +1,292 @@
+package io.github.vedhrishi.metamaps;
+
+import android.Manifest;
+import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.provider.MediaStore;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowInsets;
+import android.view.WindowManager;
+import android.webkit.GeolocationPermissions;
+import android.webkit.JavascriptInterface;
+import android.webkit.PermissionRequest;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
+
+import androidx.core.content.FileProvider;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Meta Maps for Android: the live web app in a full-screen WebView, with the phone's location,
+ * microphone, camera, share sheet and dialler wired up. All the product code is the website,
+ * so updating the site updates the app.
+ */
+public class MainActivity extends Activity {
+    private static final String HOME = "https://vedhrishi.github.io/meta-maps/";
+    private static final int REQ_PERMS = 10, REQ_FILE = 11;
+
+    private WebView web;
+    private FrameLayout root;
+    private PermissionRequest pendingWebPermission;
+    private GeolocationPermissions.Callback pendingGeo;
+    private String pendingGeoOrigin;
+    private ValueCallback<Uri[]> fileCallback;
+    private Uri cameraUri;
+
+    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
+    @Override
+    protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        getWindow().setStatusBarColor(Color.parseColor("#050b18"));
+        getWindow().setNavigationBarColor(Color.parseColor("#050b18"));
+        if (Build.VERSION.SDK_INT >= 30) {
+            getWindow().getInsetsController().setSystemBarsAppearance(0,
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                            | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+        } else {
+            View d = getWindow().getDecorView();
+            d.setSystemUiVisibility(d.getSystemUiVisibility() & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        }
+
+        root = new FrameLayout(this);
+        root.setBackgroundColor(Color.parseColor("#050b18"));
+        // Android 15 draws apps edge to edge: keep the map clear of the status and navigation bars
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            int top, bottom, left, right;
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets i = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
+                top = i.top; bottom = i.bottom; left = i.left; right = i.right;
+            } else {
+                top = insets.getSystemWindowInsetTop(); bottom = insets.getSystemWindowInsetBottom();
+                left = insets.getSystemWindowInsetLeft(); right = insets.getSystemWindowInsetRight();
+            }
+            v.setPadding(left, top, right, bottom);
+            return insets;
+        });
+
+        web = new WebView(this);
+        web.setBackgroundColor(Color.parseColor("#050b18"));
+        root.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        setContentView(root);
+
+        WebSettings s = web.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setDatabaseEnabled(true);
+        s.setGeolocationEnabled(true);
+        s.setMediaPlaybackRequiresUserGesture(false);
+        s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        s.setLoadWithOverviewMode(false);
+        s.setUseWideViewPort(true);
+        s.setSupportZoom(false);
+        s.setBuiltInZoomControls(false);
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        s.setUserAgentString(s.getUserAgentString() + " MetaMapsApp/1.0");
+
+        web.addJavascriptInterface(new Bridge(), "MetaMapsApp");
+        web.setWebViewClient(new Client());
+        web.setWebChromeClient(new Chrome());
+
+        requestStartupPermissions();
+
+        if (state != null) web.restoreState(state);
+        else web.loadUrl(startUrl(getIntent()));
+    }
+
+    private String startUrl(Intent i) {
+        Uri d = i != null ? i.getData() : null;
+        if (d != null && "vedhrishi.github.io".equals(d.getHost()) && d.getPath() != null && d.getPath().startsWith("/meta-maps")) return d.toString();
+        return HOME;
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (intent.getData() != null) web.loadUrl(startUrl(intent));
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        web.saveState(out);
+    }
+
+    @Override
+    protected void onResume() { super.onResume(); web.onResume(); }
+
+    @Override
+    protected void onPause() { web.onPause(); super.onPause(); }
+
+    @Override
+    protected void onDestroy() {
+        if (web != null) { root.removeView(web); web.destroy(); }
+        super.onDestroy();
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (web.canGoBack()) web.goBack(); else super.onBackPressed();
+    }
+
+    // ── permissions ──────────────────────────────────────────────────────────
+    private boolean has(String p) { return checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED; }
+
+    private void requestStartupPermissions() {
+        if (!has(Manifest.permission.ACCESS_FINE_LOCATION))
+            requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_PERMS);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(code, perms, results);
+        if (pendingGeo != null) {
+            boolean ok = has(Manifest.permission.ACCESS_FINE_LOCATION) || has(Manifest.permission.ACCESS_COARSE_LOCATION);
+            pendingGeo.invoke(pendingGeoOrigin, ok, false);
+            pendingGeo = null;
+        }
+        if (pendingWebPermission != null) { grantWebPermission(pendingWebPermission); pendingWebPermission = null; }
+    }
+
+    /** Grant the web page the parts of a request the phone allows. */
+    private void grantWebPermission(PermissionRequest r) {
+        List<String> ok = new ArrayList<>();
+        for (String res : r.getResources()) {
+            if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(res) && has(Manifest.permission.RECORD_AUDIO)) ok.add(res);
+            if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(res) && has(Manifest.permission.CAMERA)) ok.add(res);
+        }
+        if (ok.isEmpty()) r.deny(); else r.grant(ok.toArray(new String[0]));
+    }
+
+    // ── web client: keep our pages inside, send everything else to the right app ──
+    private class Client extends WebViewClient {
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest req) {
+            Uri u = req.getUrl();
+            String scheme = u.getScheme() == null ? "" : u.getScheme();
+            if (("https".equals(scheme) || "http".equals(scheme)) && "vedhrishi.github.io".equals(u.getHost())) return false;
+            try {
+                Intent i = new Intent("tel".equals(scheme) ? Intent.ACTION_DIAL : Intent.ACTION_VIEW, u);
+                startActivity(i);
+            } catch (ActivityNotFoundException ignored) { /* no app for it */ }
+            return true;
+        }
+
+        @Override
+        public void onPageStarted(WebView v, String url, android.graphics.Bitmap icon) { injectShare(v); }
+
+        @Override
+        public void onPageFinished(WebView v, String url) { injectShare(v); }
+
+        @Override
+        public void onReceivedError(WebView v, WebResourceRequest req, WebResourceError err) {
+            if (!req.isForMainFrame()) return;
+            v.loadData("<html><body style='background:#050b18;color:#cfe8ff;font-family:sans-serif;text-align:center;padding:64px 24px'>"
+                    + "<h2>No connection</h2><p>Meta Maps needs the internet the first time you open it.</p>"
+                    + "<p><a style='color:#00d4ff' href='" + HOME + "'>Try again</a></p></body></html>", "text/html", "utf-8");
+        }
+    }
+
+    /** WebView has no navigator.share; route it to the Android share sheet. */
+    private void injectShare(WebView v) {
+        v.evaluateJavascript("(function(){if(window.__mmShare)return;window.__mmShare=1;"
+                + "navigator.share=function(d){d=d||{};try{MetaMapsApp.share(d.title||'',d.text||'',d.url||'');return Promise.resolve();}catch(e){return Promise.reject(e);}};"
+                + "navigator.canShare=function(){return true;};})();", null);
+    }
+
+    private class Bridge {
+        @JavascriptInterface
+        public void share(String title, String text, String url) {
+            runOnUiThread(() -> {
+                Intent i = new Intent(Intent.ACTION_SEND);
+                i.setType("text/plain");
+                i.putExtra(Intent.EXTRA_SUBJECT, title);
+                i.putExtra(Intent.EXTRA_TEXT, (text == null || text.isEmpty() ? "" : text + "\n") + (url == null ? "" : url));
+                startActivity(Intent.createChooser(i, title.isEmpty() ? "Share" : title));
+            });
+        }
+    }
+
+    // ── chrome client: location, microphone, camera, photo picker ───────────────
+    private class Chrome extends WebChromeClient {
+        @Override
+        public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback cb) {
+            if (has(Manifest.permission.ACCESS_FINE_LOCATION) || has(Manifest.permission.ACCESS_COARSE_LOCATION)) {
+                cb.invoke(origin, true, false);
+            } else {
+                pendingGeo = cb; pendingGeoOrigin = origin;
+                requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_PERMS);
+            }
+        }
+
+        @Override
+        public void onPermissionRequest(PermissionRequest r) {
+            runOnUiThread(() -> {
+                List<String> need = new ArrayList<>();
+                for (String res : r.getResources()) {
+                    if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(res) && !has(Manifest.permission.RECORD_AUDIO)) need.add(Manifest.permission.RECORD_AUDIO);
+                    if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(res) && !has(Manifest.permission.CAMERA)) need.add(Manifest.permission.CAMERA);
+                }
+                if (need.isEmpty()) grantWebPermission(r);
+                else { pendingWebPermission = r; requestPermissions(need.toArray(new String[0]), REQ_PERMS); }
+            });
+        }
+
+        @Override
+        public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> cb, FileChooserParams params) {
+            if (fileCallback != null) fileCallback.onReceiveValue(null);
+            fileCallback = cb;
+            Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
+            pick.addCategory(Intent.CATEGORY_OPENABLE);
+            pick.setType("image/*");
+            List<Intent> extra = new ArrayList<>();
+            if (has(Manifest.permission.CAMERA) || checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                try {
+                    File dir = new File(getCacheDir(), "photos"); dir.mkdirs();
+                    File f = File.createTempFile("hazard_", ".jpg", dir);
+                    cameraUri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".files", f);
+                    Intent cam = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                    cam.putExtra(MediaStore.EXTRA_OUTPUT, cameraUri);
+                    cam.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                    extra.add(cam);
+                } catch (Exception ignored) { cameraUri = null; }
+            }
+            Intent chooser = Intent.createChooser(pick, "Add a photo");
+            if (!extra.isEmpty()) chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, extra.toArray(new Intent[0]));
+            try { startActivityForResult(chooser, REQ_FILE); }
+            catch (ActivityNotFoundException e) { fileCallback.onReceiveValue(null); fileCallback = null; return false; }
+            return true;
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int code, int result, Intent data) {
+        super.onActivityResult(code, result, data);
+        if (code != REQ_FILE || fileCallback == null) return;
+        Uri[] out = null;
+        if (result == RESULT_OK) {
+            if (data != null && data.getData() != null) out = new Uri[]{data.getData()};
+            else if (cameraUri != null) out = new Uri[]{cameraUri};
+        }
+        fileCallback.onReceiveValue(out);
+        fileCallback = null;
+        cameraUri = null;
+    }
+}

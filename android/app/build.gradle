@@ -1,0 +1,32 @@
+plugins { id 'com.android.application' }
+
+def ksPath = System.getenv('META_MAPS_KEYSTORE')
+android {
+    namespace 'io.github.vedhrishi.metamaps'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'io.github.vedhrishi.metamaps'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
+    signingConfigs {
+        release {
+            if (ksPath) {
+                storeFile file(ksPath)
+                storePassword System.getenv('META_MAPS_KS_PASS')
+                keyAlias 'metamaps'
+                keyPassword System.getenv('META_MAPS_KS_PASS')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (ksPath) signingConfig signingConfigs.release
+        }
+    }
+    dependencies { implementation 'androidx.core:core:1.13.1' }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
