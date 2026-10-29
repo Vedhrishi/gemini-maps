@@ -61,15 +61,6 @@ public class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setStatusBarColor(Color.parseColor("#050b18"));
         getWindow().setNavigationBarColor(Color.parseColor("#050b18"));
-        if (Build.VERSION.SDK_INT >= 30) {
-            getWindow().getInsetsController().setSystemBarsAppearance(0,
-                    android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                            | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
-        } else {
-            View d = getWindow().getDecorView();
-            d.setSystemUiVisibility(d.getSystemUiVisibility() & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-        }
-
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.parseColor("#050b18"));
         // Android 15 draws apps edge to edge: keep the map clear of the status and navigation bars
@@ -86,10 +77,17 @@ public class MainActivity extends Activity {
             return insets;
         });
 
-        web = new WebView(this);
+        try { web = new WebView(this); }
+        catch (Throwable t) {
+            TextView msg = label("Meta Maps needs Android System WebView.\nEnable or update it in Play Store, then reopen.", 16, "#ffffff", false, 0);
+            msg.setPadding(48, 200, 48, 48);
+            setContentView(msg);
+            return;
+        }
         web.setBackgroundColor(Color.parseColor("#050b18"));
         root.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
+        darkBarsIconsLight();
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
@@ -114,6 +112,21 @@ public class MainActivity extends Activity {
 
         if (state != null) web.restoreState(state);
         else web.loadUrl(startUrl(getIntent()));
+    }
+
+    /** Light icons on the dark bars. Must run after setContentView (the insets controller is null before it). */
+    private void darkBarsIconsLight() {
+        try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.view.WindowInsetsController c = getWindow().getInsetsController();
+                if (c != null) c.setSystemBarsAppearance(0,
+                        android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                                | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+            } else {
+                View d = getWindow().getDecorView();
+                d.setSystemUiVisibility(d.getSystemUiVisibility() & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+            }
+        } catch (Throwable ignored) { /* cosmetic only */ }
     }
 
     /** Welcome card shown on every fresh launch: the creator's name inviting people in. */
@@ -169,20 +182,20 @@ public class MainActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (intent.getData() != null) web.loadUrl(startUrl(intent));
+        if (web != null && intent.getData() != null) web.loadUrl(startUrl(intent));
     }
 
     @Override
     protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
-        web.saveState(out);
+        if (web != null) web.saveState(out);
     }
 
     @Override
-    protected void onResume() { super.onResume(); web.onResume(); }
+    protected void onResume() { super.onResume(); if (web != null) web.onResume(); }
 
     @Override
-    protected void onPause() { web.onPause(); super.onPause(); }
+    protected void onPause() { if (web != null) web.onPause(); super.onPause(); }
 
     @Override
     protected void onDestroy() {
@@ -192,7 +205,7 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (web.canGoBack()) web.goBack(); else super.onBackPressed();
+        if (web != null && web.canGoBack()) web.goBack(); else super.onBackPressed();
     }
 
     // ── permissions ──────────────────────────────────────────────────────────
