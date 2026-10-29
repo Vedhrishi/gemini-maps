@@ -107,7 +107,7 @@ export function useNavigation({ reports, toast, speak }: Deps) {
         route,
         hazards,
         score: hazardScore(hazards, t => hazardMultiplier(vehicleId, t)),
-        fuel: buildEstimate(route.distance, route.duration, states, vehicle),
+        fuel: buildEstimate(route.distance, route.duration, states, vehicle, (d: number) => Math.min(120, limitAt(route, d) * paceFactor(route))),
         tags: [] as string[],
       }
     })
@@ -115,6 +115,8 @@ export function useNavigation({ reports, toast, speak }: Deps) {
 
     const fastest = base.reduce((b, o, i) => (o.route.duration < base[b].route.duration ? i : b), 0)
     base[fastest].tags.push('Fastest')
+    const shortest = base.reduce((b, o, i) => (o.route.distance < base[b].route.distance ? i : b), 0)
+    base[shortest].tags.push('Shortest')
     const minScore = Math.min(...base.map(o => o.score))
     if (base.length > 1) {
       const safest = base.findIndex(o => o.score === minScore)

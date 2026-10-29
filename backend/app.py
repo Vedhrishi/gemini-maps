@@ -338,6 +338,180 @@ async def traffic_flow(request: Request, points: str):
     return {"live": bool(samples), "samples": samples}
 
 
+# ── TomTom traffic tiles for the map (proxied so the key never reaches the browser) ──
+_tile_cache: dict = {}
+_tile_budget = {"day": "", "used": 0}
+TILE_DAILY_LIMIT = int(os.getenv("TOMTOM_TILE_DAILY_LIMIT", "9000"))  # tile requests/day; TomTom bills ~8 tiles as 1 request
+_tile_client: "httpx.AsyncClient | None" = None
+
+
+@app.get("/api/traffic/tile/{z}/{x}/{y}.png")
+async def traffic_tile(request: Request, z: int, x: int, y: int):
+    """TomTom Traffic Flow raster tile (green/amber/red roads). 204 when there is no key or the day's budget is spent."""
+    from fastapi.responses import Response
+    _limit(request, "tiles", 900)
+    key = os.getenv("TOMTOM_API_KEY", "").strip()
+    if not key or not (0 <= z <= 18) or not (0 <= x < 2 ** z) or not (0 <= y < 2 ** z):
+        return Response(status_code=204, headers={"Cache-Control": "public, max-age=300"})
+    hit = _tile_cache.get((z, x, y))
+    now = time.time()
+    if hit and now - hit[0] < 150:
+        return Response(content=hit[1], media_type="image/png", headers={"Cache-Control": "public, max-age=120"})
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if _tile_budget["day"] != today:
+        _tile_budget.update(day=today, used=0)
+    if _tile_budget["used"] >= TILE_DAILY_LIMIT:
+        return Response(status_code=204, headers={"Cache-Control": "public, max-age=300"})
+    _tile_budget["used"] += 1
+    global _tile_client
+    if _tile_client is None:
+        _tile_client = httpx.AsyncClient(timeout=6)
+    try:
+        r = await _tile_client.get(
+            f"https://api.tomtom.com/traffic/map/4/tile/flow/relative/{z}/{x}/{y}.png",
+            params={"key": key, "tileSize": 256, "thickness": 8},
+        )
+    except Exception:
+        return Response(status_code=204)
+    if r.status_code != 200 or not r.content:
+        return Response(status_code=204, headers={"Cache-Control": "public, max-age=60"})
+    _tile_cache[(z, x, y)] = (now, r.content)
+    if len(_tile_cache) > 1500:
+        for k in list(_tile_cache)[:500]:
+            _tile_cache.pop(k, None)
+    return Response(content=r.content, media_type="image/png", headers={"Cache-Control": "public, max-age=120"})
+
+
+# ── Live location rooms: people who join one code see each other moving ──────
+import secrets
+import re as _re
+
+_rooms: dict = {}          # code -> {"members": {id: {...}}, "made": ts}
+LIVE_STALE = 15 * 60       # a member silent for this long drops off
+LIVE_MAX_ROOMS = 800
+LIVE_MAX_MEMBERS = 12
+_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+_PALETTE = ["#ff5c77", "#ffb020", "#3ddc97", "#a98bff", "#ff7ad9", "#35d0ff", "#f2e85c", "#ff8a4c"]
+
+
+def _clean_name(n: str) -> str:
+    n = _re.sub(r"[<>\"'`]", "", (n or "").strip())[:20]
+    return n or "Friend"
+
+
+def _prune_rooms():
+    now = time.time()
+    for code in list(_rooms):
+        room = _rooms[code]
+        for mid in [m for m, v in room["members"].items() if now - v["ts"] > LIVE_STALE]:
+            room["members"].pop(mid, None)
+        if not room["members"] and now - room["made"] > 120:
+            _rooms.pop(code, None)
+
+
+def _snapshot(room: dict) -> list:
+    now = time.time()
+    out = []
+    for mid, m in room["members"].items():
+        if m.get("lat") is None:
+            continue
+        out.append({
+            "id": mid, "name": m["name"], "color": m["color"], "lat": m["lat"], "lng": m["lng"],
+            "speed": m.get("speed"), "heading": m.get("heading"), "ago": int(now - m["ts"]),
+            "dest": m.get("dest"), "eta": m.get("eta"),
+        })
+    return out
+
+
+class LiveJoin(BaseModel):
+    room: str = ""
+    name: str = ""
+
+
+class LivePing(BaseModel):
+    me: str
+    key: str
+    lat: float
+    lng: float
+    speed: float | None = None      # km/h
+    heading: float | None = None
+    dest: str | None = None
+    eta: int | None = None          # minutes to arrival
+
+
+class LiveWho(BaseModel):
+    me: str
+    key: str
+
+
+def _live_member(code: str, me: str, key: str):
+    room = _rooms.get(code.upper())
+    m = room["members"].get(me) if room else None
+    if not room or not m or not secrets.compare_digest(m["key"], key):
+        raise HTTPException(404, "This live session has ended. Join again.")
+    return room, m
+
+
+@app.post("/api/live/join")
+async def live_join(request: Request, body: LiveJoin):
+    """Create a live room (no code) or join one (code). Returns your member id and secret key."""
+    _limit(request, "live-join", 20)
+    _prune_rooms()
+    code = _re.sub(r"[^A-Z0-9]", "", (body.room or "").upper())[:8]
+    if code:
+        room = _rooms.get(code)
+        if not room:
+            raise HTTPException(404, "No live session with that code. Check it and try again.")
+    else:
+        if len(_rooms) >= LIVE_MAX_ROOMS:
+            raise HTTPException(503, "Live sharing is busy. Try again in a few minutes.")
+        for _ in range(20):
+            code = "".join(secrets.choice(_CODE_CHARS) for _ in range(6))
+            if code not in _rooms:
+                break
+        room = _rooms[code] = {"members": {}, "made": time.time()}
+    if len(room["members"]) >= LIVE_MAX_MEMBERS:
+        raise HTTPException(409, "This live session is full.")
+    mid, key = secrets.token_hex(4), secrets.token_urlsafe(16)
+    used = {m["color"] for m in room["members"].values()}
+    color = next((c for c in _PALETTE if c not in used), _PALETTE[len(room["members"]) % len(_PALETTE)])
+    room["members"][mid] = {"name": _clean_name(body.name), "color": color, "key": key, "ts": time.time(), "lat": None, "lng": None}
+    return {"room": code, "me": mid, "key": key, "color": color, "members": _snapshot(room)}
+
+
+@app.post("/api/live/{code}/ping")
+async def live_ping(request: Request, code: str, body: LivePing):
+    """Send your position; get everyone's back. Call every few seconds while sharing."""
+    _limit(request, "live-ping", 60)
+    room, m = _live_member(code, body.me, body.key)
+    if not (-90 <= body.lat <= 90 and -180 <= body.lng <= 180):
+        raise HTTPException(422, "Bad position")
+    m.update(lat=round(body.lat, 5), lng=round(body.lng, 5), ts=time.time(),
+             speed=None if body.speed is None else max(0, min(round(body.speed), 300)),
+             heading=None if body.heading is None else round(body.heading) % 360,
+             dest=(body.dest or "")[:40] or None, eta=body.eta if body.eta is None or 0 <= body.eta < 6000 else None)
+    for mid in [i for i, v in room["members"].items() if time.time() - v["ts"] > LIVE_STALE]:
+        room["members"].pop(mid, None)
+    return {"members": _snapshot(room)}
+
+
+@app.post("/api/live/{code}/watch")
+async def live_watch(request: Request, code: str, body: LiveWho):
+    """Look at the group without sending your own position (you chose not to share yours)."""
+    _limit(request, "live-ping", 60)
+    room, m = _live_member(code, body.me, body.key)
+    m["ts"] = time.time()
+    return {"members": _snapshot(room)}
+
+
+@app.post("/api/live/{code}/leave")
+async def live_leave(request: Request, code: str, body: LiveWho):
+    _limit(request, "live-join", 40)
+    room, _m = _live_member(code, body.me, body.key)
+    room["members"].pop(body.me, None)
+    return {"ok": True}
+
+
 # ── Rain along the route (Open-Meteo, free, no key) ──────────────────────────
 _wx_cache: dict = {}
 

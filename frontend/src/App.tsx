@@ -12,6 +12,9 @@ import { ReportPanel } from './components/ReportPanel'
 import { HazardList } from './components/HazardList'
 import { AboutSheet } from './components/AboutSheet'
 import { SosSheet } from './components/SosSheet'
+import { LiveSheet } from './components/LiveSheet'
+import { useLive } from './hooks/useLive'
+import { liveCodeFromUrl, clearLiveCodeFromUrl } from './lib/live'
 import { TelemetryBar } from './components/TelemetryBar'
 import { BootSequence } from './components/BootSequence'
 import { VoiceHUD } from './components/VoiceHUD'
@@ -53,6 +56,8 @@ export default function App() {
   const [reportRate, setReportRate] = useState(0)
   const [showShortcuts, setShowShortcuts] = useState(false)
   const [showSos, setShowSos] = useState(false)
+  const [showLive, setShowLive] = useState(false)
+  const [inviteCode, setInviteCode] = useState<string | null>(null)
   /** Rain forecast for the planned route: key = plan id, done = forecast answered (or failed). */
   const [rain, setRain] = useState<{ key: number; outlook: RainOutlook; done: boolean }>({ key: -1, outlook: null, done: false })
   // 3D is the base view; 2D stays available as a fallback and for low-end devices
@@ -185,6 +190,17 @@ export default function App() {
 
   // ── Navigation ──────────────────────────────────────────────────────────
   const nav = useNavigation({ reports, toast, speak })
+  const live = useLive(
+    loc.fix ? { lat: loc.fix.lat, lng: loc.fix.lng, heading: loc.fix.heading, kmh: loc.fix.kmh } : null,
+    { dest: nav.status === 'trip' ? nav.to?.name ?? null : null, etaMin: nav.status === 'trip' ? Math.round(nav.remainingSec / 60) : null },
+  )
+  // An invitation link (?live=CODE) opens the join form with the code filled in
+  useEffect(() => {
+    if (booting) return
+    const code = liveCodeFromUrl()
+    if (code) { clearLiveCodeFromUrl(); if (!live.session) { setInviteCode(code); setShowLive(true) } }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booting])
   drivingRef.current = nav.status === 'trip'
   useWakeLock(nav.status === 'trip')
   const userPos = { lat: userLat, lng: userLng, real: gpsReal }
@@ -507,6 +523,7 @@ export default function App() {
       case 'ASK_COUNT': say(`${reportsRef.current.length} hazards reported`); break
       case 'HELP': say('Try: navigate to a place, nearest petrol pump, how is the traffic, will it rain, share my location, any hazards ahead, report pothole, or reroute.'); break
       case 'SOS': setShowSos(true); say('Emergency. Call 112 for police, fire or ambulance. Tap send my location to share where you are.'); break
+      case 'LIVE': setShowLive(true); break
       case 'SHARE_LOCATION': void shareLocationRef.current(); break
       case 'SHARE_ETA': void shareEtaRef.current(); break
       case 'WEATHER': {
@@ -784,6 +801,7 @@ export default function App() {
                 onFollowResume={() => nav.patchTrip({ follow: true })}
                 me={loc.fix ? { lat: loc.fix.lat, lng: loc.fix.lng, heading: loc.fix.heading, accuracy: loc.fix.accuracy } : null}
                 onLocate={loc.request}
+                friends={live.session ? live.members.filter(m => m.id !== live.session!.me) : []}
               />
             </Suspense>
           ) : (
@@ -799,6 +817,14 @@ export default function App() {
             onOverview={() => window.dispatchEvent(new CustomEvent('gm:map', { detail: 'fit' }))}
           />
 
+          {/* While driving the Live button moves up here so friends stay one tap away */}
+          {nav.trip && live.session && (
+            <button onClick={() => setShowLive(true)} aria-label="Live group" style={{
+              position: 'absolute', top: 'calc(118px + var(--sat, 0px))', right: 14, zIndex: 6, height: 34, padding: '0 12px', borderRadius: 17,
+              background: 'rgba(4,40,24,.92)', border: '1px solid rgba(0,255,136,.55)', color: '#5dffb0', fontWeight: 700, fontSize: 12.5,
+            }}>● Live · {live.members.length}</button>
+          )}
+
           {/* Emergency and share-my-location, one tap away when not driving */}
           {!nav.trip && (
             <div style={{ position: 'absolute', left: 14, bottom: 'calc(120px + var(--sab))', zIndex: 6, display: 'flex', gap: 8 }}>
@@ -812,6 +838,13 @@ export default function App() {
                 background: 'rgba(2,6,22,.92)', border: '1px solid rgba(0,212,255,.3)', color: 'var(--text2)',
                 boxShadow: '0 6px 20px rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', gap: 6,
               }}><span aria-hidden>📤</span>{isDesktop ? 'Share location' : 'Share'}</button>
+              <button onClick={() => setShowLive(true)} aria-label="Live location with friends" title="See friends on the map while they move" style={{
+                height: 40, padding: '0 14px', borderRadius: 20, fontWeight: 700, fontSize: 13,
+                background: live.session ? 'rgba(4,40,24,.92)' : 'rgba(2,6,22,.92)',
+                border: `1px solid ${live.session ? 'rgba(0,255,136,.55)' : 'rgba(0,212,255,.3)'}`,
+                color: live.session ? '#5dffb0' : 'var(--text2)',
+                boxShadow: '0 6px 20px rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', gap: 6,
+              }}><span aria-hidden>{live.session ? '●' : '👥'}</span>{live.session ? `Live · ${live.members.length}` : 'Live'}</button>
             </div>
           )}
 
@@ -908,6 +941,14 @@ export default function App() {
 
       {/* ══ ABOUT SHEET ═════════════════════════════════════════════════ */}
       {showShortcuts && <AboutSheet onClose={() => setShowShortcuts(false)} isDesktop={isDesktop} />}
+      {showLive && (
+        <LiveSheet
+          live={live} isDesktop={isDesktop} prefillCode={inviteCode}
+          me={loc.fix ? { lat: loc.fix.lat, lng: loc.fix.lng } : null}
+          onClose={() => { setShowLive(false); setInviteCode(null) }}
+          onShow={m => { setActiveTab('map'); setShowLive(false); window.dispatchEvent(new CustomEvent('gm:map', { detail: { fly: [m.lng, m.lat] } })) }}
+        />
+      )}
       {showSos && <SosSheet onClose={() => setShowSos(false)} onShareLocation={shareLocation} hasFix={!!loc.fix} isDesktop={isDesktop} />}
 
       {/* ══ TOASTS ══════════════════════════════════════════════════════ */}

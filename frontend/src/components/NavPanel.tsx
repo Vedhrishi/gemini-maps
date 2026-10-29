@@ -254,19 +254,23 @@ export function NavPanel({ nav, userPos, locStatus, onRequestLocation, onStartLi
 
       {/* Nearby: the most asked searches, one tap */}
       <div>
-        <div style={{ ...label, marginBottom: 7 }}>Nearby</div>
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 3, scrollbarWidth: 'none' }}>
-          {NEAR_CATS.filter(c => c.chip).map(c => {
-            const on = nearCat?.id === c.id
-            return (
-              <button key={c.id} onClick={() => showNear(c)} style={{
-                flexShrink: 0, padding: '7px 11px', borderRadius: 9, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
-                background: on ? 'rgba(0,212,255,.14)' : 'rgba(255,255,255,.03)',
-                border: `1px solid ${on ? 'rgba(0,212,255,.5)' : 'rgba(255,255,255,.08)'}`, color: on ? 'var(--accent)' : 'var(--text2)',
-              }}>{c.icon} {c.label}</button>
-            )
-          })}
-        </div>
+        {([['Nearby', false], ['Small shops', true]] as const).map(([title, shop]) => (
+          <div key={title} style={{ marginBottom: shop ? 0 : 10 }}>
+            <div style={{ ...label, marginBottom: 7 }}>{title}</div>
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 3, scrollbarWidth: 'none' }}>
+              {NEAR_CATS.filter(c => c.chip && !!c.shop === shop).map(c => {
+                const on = nearCat?.id === c.id
+                return (
+                  <button key={c.id} onClick={() => showNear(c)} style={{
+                    flexShrink: 0, padding: '7px 11px', borderRadius: 9, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+                    background: on ? 'rgba(0,212,255,.14)' : 'rgba(255,255,255,.03)',
+                    border: `1px solid ${on ? 'rgba(0,212,255,.5)' : 'rgba(255,255,255,.08)'}`, color: on ? 'var(--accent)' : 'var(--text2)',
+                  }}>{c.icon} {c.label}</button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
         {nearCat && (
           <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {nearHits === null && <div style={{ fontSize: 12.5, color: 'var(--text3)' }}>Finding the closest {nearCat.say}…</div>}
@@ -350,6 +354,32 @@ export function NavPanel({ nav, userPos, locStatus, onRequestLocation, onStartLi
           <div style={{ ...label }}>
             {nav.options.length} route{nav.options.length > 1 ? 's' : ''} · tap to compare
           </div>
+          {nav.options.length > 1 && nav.status !== 'trip' && (() => {
+            const fi = nav.options.findIndex(o => o.tags.includes('Fastest'))
+            const si = nav.options.findIndex(o => o.tags.includes('Shortest'))
+            const f = nav.options[fi], sh = nav.options[si]
+            const quick = fi === si
+              ? [{ key: 'f', icon: '⚡📏', name: 'Fastest and shortest', i: fi, o: f }]
+              : [
+                { key: 'f', icon: '⚡', name: 'Fastest', i: fi, o: f },
+                { key: 's', icon: '📏', name: 'Shortest', i: si, o: sh },
+              ]
+            return (
+              <div style={{ display: 'flex', gap: 8 }}>
+                {quick.map(q => (
+                  <button key={q.key} onClick={() => nav.choose(q.i)} style={{
+                    flex: 1, textAlign: 'left', padding: '9px 11px', borderRadius: 11, color: 'var(--text)',
+                    background: nav.selected === q.i ? 'rgba(0,212,255,.12)' : 'rgba(255,255,255,.03)',
+                    border: `1px solid ${nav.selected === q.i ? 'rgba(0,212,255,.55)' : 'rgba(255,255,255,.09)'}`,
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)' }}>{q.icon} {q.name}</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, fontFamily: 'var(--font2)', marginTop: 2 }}>{fmtDur(q.o.route.duration)}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text3)' }}>{fmtKm(q.o.route.distance)}</div>
+                  </button>
+                ))}
+              </div>
+            )
+          })()}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
             {nav.options.map((o, i) => {
               const on = i === nav.selected
@@ -368,7 +398,7 @@ export function NavPanel({ nav, userPos, locStatus, onRequestLocation, onStartLi
                   }}
                 >
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 7, minHeight: 4 }}>
-                    {o.tags.slice(0, 2).map(t => (
+                    {o.tags.slice(0, 3).map(t => (
                       <span key={t} style={{
                         fontSize: 10, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase',
                         padding: '2px 8px', borderRadius: 6,
@@ -393,7 +423,7 @@ export function NavPanel({ nav, userPos, locStatus, onRequestLocation, onStartLi
                         {LEVEL_LABEL[o.route.traffic.level]}{o.route.traffic.delay >= 120 ? ` · +${Math.round(o.route.traffic.delay / 60)} min` : ''}
                       </span>
                       <span style={{ color: 'var(--text3)' }}>
-                        {o.route.traffic.source === 'live' ? 'live now' : 'typical for this time'}
+                        {o.route.traffic.source === 'live' ? 'live now · TomTom' : 'typical for this time'}
                       </span>
                     </div>
                   )}
@@ -459,7 +489,7 @@ export function NavPanel({ nav, userPos, locStatus, onRequestLocation, onStartLi
                       </div>
                     ))}
                     <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--text3)', lineHeight: 1.5 }}>
-                      Average speed {Math.round(cur.fuel.avgKmh)} km/h adjusts efficiency for traffic.
+                      Economy is worked out stretch by stretch from the road's speed (average {Math.round(cur.fuel.avgKmh)} km/h), so highways and city traffic count differently. A full {nav.vehicle.fuel === 'ev' ? 'charge' : 'tank'} lasts about {Math.round(cur.fuel.rangeKm / 10) * 10} km here{cur.fuel.stops > 0 ? `, so plan ${cur.fuel.stops} ${nav.vehicle.fuel === 'ev' ? 'charging' : 'fuel'} stop${cur.fuel.stops > 1 ? 's' : ''}` : ''}.
                       {cur.fuel.currency === 'USD' ? 'Outside India: world-average pump price (about US$1.30/L)' : `Pump prices as of ${PRICE_DATE}`}; real mileage varies with load, driving style and AC.
                       {cur.fuel.partial && ' Some states could not be resolved; the national average is used there.'}
                     </div>

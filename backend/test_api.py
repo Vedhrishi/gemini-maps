@@ -214,3 +214,46 @@ def test_to_wav_handles_iphone_mp4(tmp_path):
     subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-v", "error", "-f", "lavfi", "-i", "sine=f=300:d=1", "-c:a", "aac", str(src)], check=True)
     wav = ai_client._to_wav(src.read_bytes(), "audio/mp4")
     assert wav[:4] == b"RIFF" and len(wav) > 20000
+
+
+def test_live_rooms_two_people_see_each_other():
+    appmod._rooms.clear(); appmod._hits.clear()
+    a = c.post("/api/live/join", json={"name": "Asha"}).json()
+    code = a["room"]
+    assert len(code) == 6 and a["members"] == []
+    b = c.post("/api/live/join", json={"room": code.lower(), "name": "Ravi <b>"}).json()
+    assert b["room"] == code and b["me"] != a["me"] and b["color"] != a["color"]
+    r = c.post(f"/api/live/{code}/ping", json={"me": a["me"], "key": a["key"], "lat": 17.44, "lng": 78.38, "speed": 42.4, "heading": 370}).json()
+    assert [m["name"] for m in r["members"]] == ["Asha"] and r["members"][0]["speed"] == 42 and r["members"][0]["heading"] == 10
+    r = c.post(f"/api/live/{code}/ping", json={"me": b["me"], "key": b["key"], "lat": 17.5, "lng": 78.4}).json()
+    assert sorted(m["name"] for m in r["members"]) == ["Asha", "Ravi b"]
+    w = c.post(f"/api/live/{code}/watch", json={"me": b["me"], "key": b["key"]}).json()
+    assert len(w["members"]) == 2
+
+
+def test_live_rooms_reject_bad_key_and_unknown_code():
+    appmod._rooms.clear(); appmod._hits.clear()
+    a = c.post("/api/live/join", json={"name": "A"}).json()
+    bad = c.post(f"/api/live/{a['room']}/ping", json={"me": a["me"], "key": "nope", "lat": 1, "lng": 1})
+    assert bad.status_code == 404
+    assert c.post("/api/live/join", json={"room": "ZZZZZZ"}).status_code == 404
+    assert c.post(f"/api/live/{a['room']}/ping", json={"me": a["me"], "key": a["key"], "lat": 99, "lng": 1}).status_code == 422
+
+
+def test_live_leave_and_stale_members():
+    appmod._rooms.clear(); appmod._hits.clear()
+    a = c.post("/api/live/join", json={"name": "A"}).json()
+    b = c.post("/api/live/join", json={"room": a["room"], "name": "B"}).json()
+    for p in (a, b):
+        c.post(f"/api/live/{a['room']}/ping", json={"me": p["me"], "key": p["key"], "lat": 17.4, "lng": 78.4})
+    appmod._rooms[a["room"]]["members"][b["me"]]["ts"] -= 3600       # B went quiet an hour ago
+    r = c.post(f"/api/live/{a['room']}/ping", json={"me": a["me"], "key": a["key"], "lat": 17.41, "lng": 78.4}).json()
+    assert [m["name"] for m in r["members"]] == ["A"]
+    assert c.post(f"/api/live/{a['room']}/leave", json={"me": a["me"], "key": a["key"]}).json()["ok"]
+
+
+def test_traffic_tile_without_key_is_empty(monkeypatch):
+    monkeypatch.delenv("TOMTOM_API_KEY", raising=False)
+    assert c.get("/api/traffic/tile/12/2930/1830.png").status_code == 204
+    monkeypatch.setenv("TOMTOM_API_KEY", "k")
+    assert c.get("/api/traffic/tile/3/99/1.png").status_code == 204   # tile outside the grid

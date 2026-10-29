@@ -32,6 +32,8 @@ export interface NearCat {
   group?: 'food' | 'worship'
   /** shown as a quick chip in the Nearby row */
   chip?: boolean
+  /** goes in the "Small shops" row rather than "Nearby" */
+  shop?: boolean
 }
 
 const cat = (id: string, label: string, icon: string, say: string, words: RegExp, match: RegExp, osm: string[],
@@ -43,7 +45,7 @@ const WORSHIP_VAGUE = /religious|historic|monument|landmark|tourist|attraction|c
 export const NEAR_CATS: NearCat[] = [
   cat('ev', 'EV charging', '🔌', 'charging station', /charging|\bev\b|electric (car|vehicle|bike)/, /charging station|ev charg/, ['"amenity"="charging_station"'], 4, 80, { chip: true }),
   cat('fuel', 'Petrol', '⛽', 'petrol pump', /petrol|gas station|fuel|diesel|filling station|\bpumps?\b|\bcng\b|bunk/, /gas station|fuel|petrol|filling|\bcng\b/, ['"amenity"="fuel"'], 3, 80, { chip: true }),
-  cat('carwash', 'Car wash', '🚿', 'car wash', /car ?wash|car detailing|vehicle wash/, /car wash|auto detailing/, ['"amenity"="car_wash"'], 4, 40),
+  cat('carwash', 'Car wash', '🚿', 'car wash', /car ?wash|bike ?wash|water ?service|car detailing|vehicle wash|car spa|washing (centre|center)/, /car wash|auto detailing/, ['"amenity"="car_wash"'], 4, 40, { chip: true }),
   cat('mechanic', 'Mechanic', '🔧', 'car mechanic', /mechanic|garage|puncture|tyre|tire|repair shop|service cent(er|re)|workshop|bike repair/, /automotive repair|auto repair|car repair|tire|tyre|mechanic|garage|motorcycle repair|automotive service/, ['"shop"~"car_repair|tyres|motorcycle_repair"', '"amenity"="car_repair"'], 3, 40, { chip: true }),
   cat('showroom', 'Showroom', '🚗', 'car showroom', /showroom|car dealer|bike dealer|car dealership|bike showroom/, /auto dealer|car dealer|motorcycle dealer|bike store|motorsport vehicle dealer|auto company|used auto dealer/, ['"shop"~"car|motorcycle"'], 5, 60),
   cat('hospital', 'Hospital', '🏥', 'hospital', /hospital|emergency room|trauma|casualty|nursing home/, /hospital|emergency room|trauma|medical center/, ['"amenity"="hospital"'], 4, 80, { chip: true }),
@@ -61,7 +63,7 @@ export const NEAR_CATS: NearCat[] = [
 
   // eating and drinking
   cat('icecream', 'Ice cream', '🍦', 'ice cream shop', /ice ?cream|gelato|kulfi|frozen dessert/, /ice cream|dessert|frozen yogurt/, ['"amenity"="ice_cream"', '"shop"="ice_cream"'], 3, 30),
-  cat('bakery', 'Bakery & sweets', '🥐', 'bakery', /bakery|bakeries|cake|sweets?\b|patisserie|mithai|confectioner/, /bakery|patisserie|cake|dessert|sweet|candy|confection|chocolatier/, ['"shop"~"bakery|pastry|confectionery"'], 3, 30),
+  cat('bakery', 'Bakery & sweets', '🥐', 'bakery', /bakery|bakeries|cake|sweets?\b|patisserie|mithai|confectioner/, /bakery|patisserie|cake|dessert|sweet|candy|confection|chocolatier/, ['"shop"~"bakery|pastry|confectionery"'], 3, 30, { chip: true, shop: true }),
   cat('cafe', 'Cafe', '☕', 'cafe', /\bcafes?\b|coffee|tea (shop|stall|house)|chai/, /\bcafe\b|coffee|tea room|tea house|tea shop|chai/, ['"amenity"="cafe"'], 2, 30, { chip: true }),
   cat('bar', 'Bar & pub', '🍺', 'bar', /\bbars?\b|\bpubs?\b|brewery|nightclub|night club|\bclub\b|lounge|cocktail|beer/, /\bbar\b|\bpub\b|brew|night ?club|dance club|lounge|cocktail/, ['"amenity"~"bar|pub|biergarten|nightclub"'], 3, 40),
   cat('liquor', 'Wine shop', '🍷', 'wine shop', /liquor|wine ?shop|wines\b|alcohol|beer shop/, /liquor|wine|beer/, ['"shop"~"alcohol|wine"'], 3, 30),
@@ -100,21 +102,28 @@ export const NEAR_CATS: NearCat[] = [
   cat('bus', 'Bus stop', '🚌', 'bus stop', /bus (stop|station|stand|depot)|\bbus\b|bus bay|\bbus$/, /bus station|bus stop|bus stand|transit/, ['"highway"="bus_stop"', '"amenity"="bus_station"'], 2, 30, { nameMatch: /bus (stop|stand|station|depot)/ }),
 
   // shopping and services
-  cat('grocery', 'Groceries', '🛒', 'supermarket', /grocery|groceries|supermarket|kirana|provision|convenience|\bmart\b|vegetables?|fruits?|general store|daily needs/, /grocery|supermarket|convenience|kirana|produce|general store|wholesale grocer|food and beverage store/, ['"shop"~"supermarket|convenience|greengrocer|general"'], 2, 30, { chip: true }),
-  cat('mobile', 'Mobile & electronics', '📱', 'mobile shop', /mobile (shop|store)|phone (shop|store|repair)|electronics?|laptop|gadgets?|computer (shop|store)|mobile repair/, /mobile phone|electronics|computer store|appliance|phone repair|camera and photography/, ['"shop"~"mobile_phone|electronics|computer"'], 3, 40),
-  cat('clothing', 'Clothes', '👕', 'clothing store', /clothes|clothing|garments?|boutique|fashion|textiles?|saree|apparel|shoe|footwear|tailor/, /clothing|fashion|apparel|shoe|boutique|textile|tailor|sewing|designer clothing/, ['"shop"~"clothes|boutique|fashion|shoes|tailor|fabric"'], 3, 40),
+  cat('grocery', 'Groceries', '🛒', 'supermarket', /grocery|groceries|supermarket|kirana|provision|convenience|\bmart\b|vegetables?|fruits?|general store|daily needs/, /grocery|supermarket|convenience|kirana|produce|general store|wholesale grocer|food and beverage store/, ['"shop"~"supermarket|convenience|greengrocer|general"'], 2, 30, { chip: true, shop: true }),
+  cat('mobile', 'Mobile & electronics', '📱', 'mobile shop', /mobile (shop|store)|phone (shop|store|repair)|electronics?|laptop|gadgets?|computer (shop|store)|mobile repair/, /mobile phone|electronics|computer store|appliance|phone repair|camera and photography/, ['"shop"~"mobile_phone|electronics|computer"'], 3, 40, { chip: true, shop: true }),
+  cat('clothing', 'Clothes', '👕', 'clothing store', /clothes|clothing|garments?|boutique|fashion|textiles?|saree|apparel|shoe|footwear|tailor/, /clothing|fashion|apparel|shoe|boutique|textile|tailor|sewing|designer clothing/, ['"shop"~"clothes|boutique|fashion|shoes|tailor|fabric"'], 3, 40, { chip: true, shop: true }),
   cat('jewellery', 'Jewellery', '💍', 'jewellery shop', /jewell?(ery|er|ers)|gold shop|silver shop|diamond/, /jewel|pawn shop|gold/, ['"shop"="jewelry"'], 3, 40),
   cat('furniture', 'Furniture', '🛋', 'furniture store', /furniture|mattress|sofa/, /furniture|mattress|home goods|carpet/, ['"shop"~"furniture|bed|interior"'], 4, 40),
-  cat('books', 'Bookstore', '📚', 'bookstore', /book ?(store|shop)|books\b|stationery|stationary/, /bookstore|office supply|library|stationery|publisher/, ['"shop"~"books|stationery"'], 4, 40),
-  cat('hardware', 'Hardware', '🧰', 'hardware store', /hardware|paint shop|plumbing|electrician|building material|cement|tiles?|sanitary/, /hardware|paint store|building supply|home improvement|lumber|tile store|lighting store/, ['"shop"~"hardware|doityourself|paint|trade"'], 3, 40),
-  cat('salon', 'Salon', '💇', 'salon', /salons?|barber|parlou?rs?|haircut|hair ?cut|beauty|\bspa\b|massage|makeup/, /salon|barber|beauty|hair|spa|massage|nail|makeup/, ['"shop"~"hairdresser|beauty"', '"amenity"="spa"', '"leisure"="spa"'], 2, 30),
-  cat('laundry', 'Laundry', '🧺', 'laundry', /laundry|dry ?clean|ironing|washing/, /laundr|dry clean|ironing/, ['"shop"~"laundry|dry_cleaning"'], 4, 30),
+  cat('books', 'Bookstore', '📚', 'bookstore', /book ?(store|shop)|books\b|stationery|stationary/, /bookstore|office supply|library|stationery|publisher/, ['"shop"~"books|stationery"'], 4, 40, { chip: true, shop: true }),
+  cat('hardware', 'Hardware', '🧰', 'hardware store', /hardware|paint shop|plumbing|electrician|building material|cement|tiles?|sanitary/, /hardware|paint store|building supply|home improvement|lumber|tile store|lighting store/, ['"shop"~"hardware|doityourself|paint|trade"'], 3, 40, { chip: true, shop: true }),
+  cat('salon', 'Salon', '💇', 'salon', /salons?|barber|parlou?rs?|haircut|hair ?cut|beauty|\bspa\b|massage|makeup/, /salon|barber|beauty|hair|spa|massage|nail|makeup/, ['"shop"~"hairdresser|beauty"', '"amenity"="spa"', '"leisure"="spa"'], 2, 30, { chip: true, shop: true }),
+  cat('laundry', 'Laundry', '🧺', 'laundry', /laundry|dry ?clean|ironing|washing/, /laundr|dry clean|ironing/, ['"shop"~"laundry|dry_cleaning"'], 4, 30, { chip: true, shop: true }),
   cat('post', 'Post office', '📮', 'post office', /post office|courier|speed post|parcel/, /post office|shipping center|courier|freight/, ['"amenity"="post_office"', '"office"="courier"'], 4, 60),
   cat('library', 'Library', '📖', 'library', /librar(y|ies)|reading room/, /library/, ['"amenity"="library"'], 5, 60),
   cat('school', 'School', '🏫', 'school', /schools?|kindergarten|preschool|play ?school/, /school|kindergarten|preschool|education/, ['"amenity"~"school|kindergarten"'], 3, 40),
   cat('college', 'College', '🎓', 'college', /colleges?|universit(y|ies)|institute|campus|engineering college/, /college|universit|institute|campus|academy/, ['"amenity"~"college|university"'], 4, 60),
   cat('govt', 'Govt office', '🏢', 'government office', /government office|govt office|collector|municipal|panchayat|tehsil|mandal|rto\b|passport (office|seva)|aadhaar|court/, /government|town hall|municipal|courthouse|passport/, ['"office"="government"', '"amenity"~"townhall|courthouse"'], 5, 60),
-  cat('food_store', 'Meat & fish', '🥩', 'meat shop', /meat|chicken (shop|center|centre)|fish (market|shop)|mutton|butcher/, /butcher|meat|fish|seafood market/, ['"shop"~"butcher|seafood"'], 3, 30),
+  cat('juice', 'Juice & coconut', '🥤', 'juice shop', /juice|tender coconut|coconut water|sugarcane|lassi|smoothie|fresh juice|shake/, /juice|smoothie|beverage|coconut|lassi/, ['"amenity"="juice_bar"', '"shop"="beverages"', '"cuisine"~"juice|smoothie"'], 2, 30, { chip: true, shop: true }),
+  cat('snacks', 'Snacks & chaat', '🥟', 'snack stall', /snacks?|chaat|pani ?puri|golgappa|street food|samosa|pakora|bajji|vada|bhel|puri stall|tiffin centre/, /snack|chaat|street food|samosa|tiffin/, ['"amenity"="fast_food"]["cuisine"~"snack|street_food|chaat|samosa|indian"', '"shop"="deli"'], 2, 30, { chip: true, shop: true, nameMatch: /chaat|snack|puri|samosa|bhel|vada|bajji/ }),
+  cat('florist', 'Flowers', '💐', 'flower shop', /florist|flowers?|flower (shop|stall)|garlands?|bouquet/, /florist|flower|garland|bouquet/, ['"shop"="florist"'], 3, 30, { chip: true, shop: true }),
+  cat('xerox', 'Print & xerox', '🖨', 'xerox shop', /xerox|photo ?copy|print(ing)? (shop|out|service)|print ?outs?|cyber ?cafe|internet cafe|lamination|passport photo/, /print|copy|cyber|internet cafe|photo/, ['"shop"="copyshop"', '"amenity"="internet_cafe"', '"craft"="printer"'], 3, 30, { chip: true, shop: true }),
+  cat('optician', 'Optical', '👓', 'optical shop', /optical|optician|spectacles?|eye ?glasses|sunglasses|eyewear|eye care|eye hospital/, /optical|optician|eyewear|eye care|sunglasses/, ['"shop"="optician"', '"healthcare"="optometrist"'], 3, 40, { chip: true, shop: true }),
+  cat('gifts', 'Gifts & toys', '🎁', 'gift shop', /gifts?|toys?|souvenir|novelty|handicraft/, /gift|toy|souvenir|novelty|handicraft/, ['"shop"~"gift|toys|variety_store|souvenir"'], 3, 40, { chip: true, shop: true }),
+  cat('petshop', 'Pet shop', '🐕', 'pet shop', /pet (shop|store|supplies|food)|dog food|aquarium shop/, /pet (store|shop|supplies)|pet food|aquarium/, ['"shop"="pet"'], 4, 50, { chip: true, shop: true }),
+  cat('food_store', 'Meat & fish', '🥩', 'meat shop', /meat|chicken (shop|center|centre)|fish (market|shop)|mutton|butcher/, /butcher|meat|fish|seafood market/, ['"shop"~"butcher|seafood"'], 3, 30, { chip: true, shop: true }),
 ]
 
 // ── qualifiers: what people add to a kind of place ──────────────────────────────

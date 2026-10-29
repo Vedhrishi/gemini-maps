@@ -38,6 +38,7 @@ export const VOICE_COMMANDS: { phrase: string; does: string }[] = [
   { phrase: 'try a drive', does: 'Watch the Guardian reroute' },
   { phrase: 'will it rain', does: 'Rain on your route' },
   { phrase: 'share my location · share my ETA', does: 'Send it on WhatsApp or SMS' },
+  { phrase: 'live location · track my friends', does: 'Open live tracking' },
   { phrase: 'emergency · SOS', does: 'Emergency numbers and share your location' },
   { phrase: 'help', does: 'Hear what you can say' },
 ]
@@ -58,6 +59,7 @@ export function parseCommand(text: string): VoiceCommand {
   const has = (re: RegExp) => re.test(t)
   const going = has(/\b(navigate to|take me to|directions to|drive to|route to|go to|find|nearest|nearby|closest)\b/)
   if (!going && has(/\b(sos|emergency)\b|i need help$|^help me$|call (the )?(police|ambulance)|i('m| am) in danger/)) return 'SOS'
+  if (has(/live (location|tracking|sharing|group)|track (my )?(friends?|family|someone|him|her|them)|share (my )?live|where (is|are) (my )?(friends?|family)/)) return 'LIVE'
   if (has(/(share|send) (my )?(eta|trip|arrival|journey|ride)|tell (them|him|her|everyone) i'?m (coming|on my way)/)) return 'SHARE_ETA'
   if (has(/(share|send) (my )?(live |current )?location|share where i am/)) return 'SHARE_LOCATION'
   if (!going && has(/\b(rain|raining|rainy|weather|umbrella|forecast)\b/)) return 'WEATHER'

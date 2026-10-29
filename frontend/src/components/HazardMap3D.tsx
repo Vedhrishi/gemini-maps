@@ -11,7 +11,7 @@ import { lastKnown } from '../hooks/useLocation'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import maplibregl, { Map as MLMap, Marker, Popup } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { HazardReport } from '../lib/api'
+import { HazardReport, API_URL } from '../lib/api'
 import { darkStyle3d } from '../lib/mapStyle3d'
 import { HAZARD_ICONS, HAZARD_LABELS, SEVERITY_COLORS, timeAgo } from '../lib/mapUtils'
 
@@ -36,6 +36,8 @@ interface Props {
   onLocate?: () => void
   /** frame all hazards on load (only when the user's location is unavailable) */
   autoFit?: boolean
+  /** People sharing their live location with you */
+  friends?: { id: string; name: string; color: string; lat: number; lng: number; heading: number | null; speed: number | null }[]
 }
 
 const DEFAULT_PITCH = 55
@@ -177,7 +179,7 @@ function popupHTML(r: HazardReport): string {
     </div>`
 }
 
-export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, trip, onFollowBreak, onFollowResume, me, onLocate, autoFit = false }: Props) {
+export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, trip, onFollowBreak, onFollowResume, me, onLocate, autoFit = false, friends = [] }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MLMap | null>(null)
   const markersRef = useRef<Map<string, Marker>>(new Map())
@@ -216,6 +218,8 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
   const rafRef = useRef<number | null>(null)
   const fittedRef = useRef(false)
   const [ready, setReady] = useState(false)
+  // TomTom live traffic on the roads (green, amber, red). On by default; the choice is remembered.
+  const [traffic, setTraffic] = useState<boolean>(() => { try { return localStorage.getItem('gm-traffic') !== '0' } catch { return true } })
   const [failed, setFailed] = useState(false)
   const [pitch, setPitch] = useState(DEFAULT_PITCH)
 
@@ -379,6 +383,13 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
         paint: { 'line-color': '#19d3ff', 'line-width': w(3.5, 10) } }, before)
       map.addLayer({ id: 'route-flow', type: 'line', source: 'route', layout: { 'line-cap': 'butt', 'line-join': 'round' },
         paint: { 'line-color': '#ffffff', 'line-width': w(1.6, 4), 'line-opacity': 0.9, 'line-dasharray': [0, 4, 3] } }, before)
+      // TomTom traffic flow, fetched through our server (the key stays there). Hidden layers load nothing.
+      map.addSource('tomtom-flow', {
+        type: 'raster', tiles: [`${API_URL}/api/traffic/tile/{z}/{x}/{y}.png`], tileSize: 256, minzoom: 7, maxzoom: 16,
+        attribution: 'Traffic © <a href="https://www.tomtom.com" target="_blank" rel="noopener">TomTom</a>',
+      })
+      map.addLayer({ id: 'tomtom-flow', type: 'raster', source: 'tomtom-flow',
+        layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 150 } }, 'route-alt')
       setReady(true)
     })
     // Moving the map yourself takes the camera back from the trip follower (like Google Maps):
@@ -579,6 +590,43 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.lat, me?.lng, me?.heading, ready, !!trip])
 
+  // Traffic layer on or off
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready || !map.getLayer('tomtom-flow')) return
+    map.setLayoutProperty('tomtom-flow', 'visibility', traffic ? 'visible' : 'none')
+    try { localStorage.setItem('gm-traffic', traffic ? '1' : '0') } catch { /* private mode */ }
+  }, [traffic, ready])
+
+  // People sharing their live location: a coloured marker with their name, sliding between updates
+  const friendRefs = useRef<Map<string, Marker>>(new Map())
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    const seen = new Set<string>()
+    for (const f of friends) {
+      seen.add(f.id)
+      let mk = friendRefs.current.get(f.id)
+      if (!mk) {
+        const el = document.createElement('div')
+        el.className = 'hz-friend'
+        el.style.cssText = 'position:relative;width:34px;height:34px;transition:none;'
+        el.innerHTML = `
+          <div class="hz-f-pulse" style="position:absolute;inset:-8px;border-radius:50%;background:${f.color}33;animation:hz-ping 2.2s ease-out infinite;"></div>
+          <div class="hz-f-dot" style="position:absolute;inset:0;border-radius:50%;background:${f.color};border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,.6);display:grid;place-items:center;color:#06101c;font:800 14px var(--font2,system-ui);"></div>
+          <div class="hz-f-name" style="position:absolute;left:50%;top:40px;transform:translateX(-50%);white-space:nowrap;padding:2px 8px;border-radius:8px;background:rgba(2,6,22,.92);border:1px solid ${f.color};color:#fff;font:700 11px system-ui;"></div>`
+        mk = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([f.lng, f.lat]).addTo(map)
+        friendRefs.current.set(f.id, mk)
+      }
+      const el = mk.getElement()
+      ;(el.querySelector('.hz-f-dot') as HTMLElement).textContent = (f.name[0] || '?').toUpperCase()
+      ;(el.querySelector('.hz-f-name') as HTMLElement).textContent = f.name + (f.speed != null && f.speed > 3 ? ` · ${f.speed} km/h` : '')
+      mk.setLngLat([f.lng, f.lat])
+    }
+    friendRefs.current.forEach((mk, id) => { if (!seen.has(id)) { mk.remove(); friendRefs.current.delete(id) } })
+  }, [friends, ready])
+  useEffect(() => () => { friendRefs.current.forEach(m => m.remove()); friendRefs.current.clear() }, [])
+
   // Vehicle marker + follow camera
   useEffect(() => {
     const map = mapRef.current
@@ -695,7 +743,14 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
     const on = (e: Event) => {
       const map = mapRef.current
       if (!map) return
-      const act = (e as CustomEvent).detail as string
+      const detail = (e as CustomEvent).detail
+      if (detail && typeof detail === 'object' && Array.isArray(detail.fly)) {
+        busyUntil.current = Date.now() + 2500
+        if (tripRef.current?.follow) onFollowBreakRef.current?.()
+        map.flyTo({ center: detail.fly as [number, number], zoom: Math.max(map.getZoom(), 15), duration: 1100 })
+        return
+      }
+      const act = detail as string
       if (act === 'zoomIn') map.zoomIn({ duration: 500 })
       else if (act === 'zoomOut') map.zoomOut({ duration: 500 })
       else if (act === 'top') setView(0)
@@ -827,6 +882,28 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
           >{label}</button>
         ))}
       </div>
+
+      {/* Live traffic from TomTom */}
+      <button
+        onClick={() => setTraffic(t => !t)}
+        aria-pressed={traffic}
+        title={traffic ? 'Hide live traffic' : 'Show live traffic'}
+        style={{
+          position: 'absolute', top: 58, right: 14, zIndex: 6, display: 'flex', alignItems: 'center', gap: 8,
+          padding: '7px 11px', borderRadius: 10, fontSize: 11.5, fontWeight: 700,
+          background: traffic ? 'rgba(0,212,255,.14)' : 'rgba(2,6,22,.86)',
+          border: `1px solid ${traffic ? 'rgba(0,212,255,.55)' : 'rgba(0,212,255,.16)'}`,
+          color: traffic ? 'var(--accent)' : 'var(--text3)',
+        }}
+      >
+        <span aria-hidden>🚦</span>Traffic
+        {traffic && <span style={{ width: 38, height: 6, borderRadius: 3, background: 'linear-gradient(90deg,#1fd16b,#ffc233,#ff4d3d,#b3122a)' }} aria-label="Free flowing to stopped" />}
+      </button>
+      {traffic && (
+        <div style={{ position: 'absolute', top: 94, right: 14, zIndex: 6, fontSize: 10, color: 'var(--text3)', textAlign: 'right', pointerEvents: 'none' }}>
+          Live traffic by TomTom
+        </div>
+      )}
 
       {!ready && (
         <div style={{

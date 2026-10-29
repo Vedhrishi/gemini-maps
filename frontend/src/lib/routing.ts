@@ -418,7 +418,7 @@ export function paceFactor(route: Route): number {
 /** Sample states along a route and return one label per equal-length chunk. */
 export async function statesAlong(route: Route): Promise<(string | null)[]> {
   const km = route.distance / 1000
-  const n = Math.max(1, Math.min(20, Math.ceil(km / 60)))
+  const n = Math.max(1, Math.min(36, Math.ceil(km / 45)))
   const step = route.distance / n
   const pts = Array.from({ length: n }, (_, i) => pointAt(route, (i + 0.5) * step).pos)
   const out: (string | null)[] = new Array(n).fill(null)
@@ -429,7 +429,7 @@ export async function statesAlong(route: Route): Promise<(string | null)[]> {
       out[i] = await reverseState(pts[i][1], pts[i][0])
     }
   }
-  await Promise.all([worker(), worker(), worker()])
+  await Promise.all([worker(), worker(), worker(), worker()])
   // Fill gaps from the nearest resolved neighbour — a state doesn't flip every 60 km
   for (let i = 0; i < n; i++) {
     if (out[i]) continue

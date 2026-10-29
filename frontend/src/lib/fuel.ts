@@ -20,15 +20,17 @@ export interface Vehicle {
   fuel: FuelType
   /** km per litre (km per kWh for EV) at steady 50-80 km/h */
   kmpl: number
+  /** fuel tank in litres (usable battery in kWh for an EV) */
+  tank: number
 }
 
 export const VEHICLES: Vehicle[] = [
-  { id: 'hatch', label: 'Hatchback · petrol', icon: '🚗', fuel: 'petrol', kmpl: 17 },
-  { id: 'sedan', label: 'Sedan · petrol', icon: '🚙', fuel: 'petrol', kmpl: 14 },
-  { id: 'suv-p', label: 'SUV · petrol', icon: '🚐', fuel: 'petrol', kmpl: 11 },
-  { id: 'suv-d', label: 'SUV · diesel', icon: '🛻', fuel: 'diesel', kmpl: 15 },
-  { id: 'bike', label: 'Motorbike · petrol', icon: '🏍️', fuel: 'petrol', kmpl: 42 },
-  { id: 'ev', label: 'Electric car', icon: '⚡', fuel: 'ev', kmpl: 6.5 },
+  { id: 'hatch', label: 'Hatchback · petrol', icon: '🚗', fuel: 'petrol', kmpl: 17, tank: 37 },
+  { id: 'sedan', label: 'Sedan · petrol', icon: '🚙', fuel: 'petrol', kmpl: 14, tank: 45 },
+  { id: 'suv-p', label: 'SUV · petrol', icon: '🚐', fuel: 'petrol', kmpl: 11, tank: 55 },
+  { id: 'suv-d', label: 'SUV · diesel', icon: '🛻', fuel: 'diesel', kmpl: 15, tank: 55 },
+  { id: 'bike', label: 'Motorbike · petrol', icon: '🏍️', fuel: 'petrol', kmpl: 42, tank: 13 },
+  { id: 'ev', label: 'Electric car', icon: '⚡', fuel: 'ev', kmpl: 6.5, tank: 40 },
 ]
 
 /** Public charging, average across networks (INR per kWh). */
@@ -121,20 +123,29 @@ export function priceFor(state: string | null, v: Vehicle): number {
   return v.fuel === 'diesel' ? p[1] : p[0]
 }
 
-/**
- * Real-world efficiency multiplier from average route speed (km/h).
- * Stop-start traffic and high-speed cruising both burn more than the sweet spot.
- */
-export function efficiencyFactor(avgKmh: number, v: Vehicle): number {
-  let f: number
-  if (avgKmh < 18) f = 0.68
-  else if (avgKmh < 30) f = 0.82
-  else if (avgKmh < 45) f = 0.93
-  else if (avgKmh < 85) f = 1.0
-  else f = 0.9
-  // EVs recover energy braking in the city, so they suffer less from stop-start
-  if (v.fuel === 'ev' && avgKmh < 45) f = Math.min(1.05, f + 0.15)
-  return f
+/** Piecewise-linear lookup through [speed km/h, factor] points. */
+function lerp(pts: [number, number][], x: number): number {
+  if (x <= pts[0][0]) return pts[0][1]
+  for (let i = 1; i < pts.length; i++) {
+    if (x <= pts[i][0]) {
+      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]
+      return y0 + ((y1 - y0) * (x - x0)) / (x1 - x0)
+    }
+  }
+  return pts[pts.length - 1][1]
+}
+
+// Fuel economy against steady speed (1.0 = the vehicle's rated real-world figure at 55-70 km/h).
+// Stop-start traffic and fast cruising both burn more than the sweet spot.
+const ICE_CURVE: [number, number][] = [[5, 0.5], [15, 0.62], [25, 0.78], [35, 0.9], [50, 0.99], [62, 1.0], [80, 0.97], [90, 0.91], [100, 0.84], [110, 0.76], [125, 0.66]]
+// An EV recovers energy in the city but loses range quickly at highway speed (air drag).
+const EV_CURVE: [number, number][] = [[5, 1.05], [15, 1.12], [30, 1.12], [50, 1.06], [65, 1.0], [80, 0.9], [100, 0.74], [120, 0.6]]
+// Motorbikes are light: less penalty from drag, same stop-start penalty
+const BIKE_CURVE: [number, number][] = [[5, 0.55], [15, 0.68], [25, 0.84], [40, 0.97], [55, 1.0], [70, 0.97], [85, 0.88], [100, 0.76]]
+
+/** Efficiency multiplier at a given average speed (km/h). */
+export function efficiencyFactor(kmh: number, v: Vehicle): number {
+  return lerp(v.fuel === 'ev' ? EV_CURVE : v.id === 'bike' ? BIKE_CURVE : ICE_CURVE, kmh)
 }
 
 export interface FuelChunk {
@@ -158,6 +169,10 @@ export interface FuelEstimate {
   partial: boolean
   /** costs and prices are in this currency: INR in India, USD elsewhere */
   currency: 'INR' | 'USD'
+  /** how far one full tank (or charge) really lasts on this route, km */
+  rangeKm: number
+  /** fuel or charging stops needed on the way */
+  stops: number
 }
 
 /**
@@ -169,11 +184,12 @@ export function buildEstimate(
   durationSec: number,
   states: (string | null)[],
   v: Vehicle,
+  /** speed (km/h) actually driven at `d` metres along the route; falls back to the route average */
+  speedAt?: (d: number) => number,
 ): FuelEstimate {
   const n = Math.max(1, states.length)
   const step = totalMeters / n
   const avgKmh = durationSec > 0 ? (totalMeters / 1000) / (durationSec / 3600) : 50
-  const eff = efficiencyFactor(avgKmh, v)
   const usd = states.filter(x => x === 'world').length > states.length / 2
   const fx = usd ? 1 / INR_PER_USD : 1
   const chunks: FuelChunk[] = []
@@ -182,7 +198,8 @@ export function buildEstimate(
   let cost = 0
   states.forEach((s, i) => {
     const km = step / 1000
-    const l = km / (v.kmpl * eff)
+    const speed = speedAt ? speedAt((i + 0.5) * step) : avgKmh
+    const l = km / (v.kmpl * efficiencyFactor(speed, v))
     const price = priceFor(s, v) * fx
     const c = l * price
     litres += l
@@ -194,7 +211,12 @@ export function buildEstimate(
     cur.cost += c
     agg.set(label, cur)
   })
+  // Usable range: a full tank less a 10% reserve, at this route's own economy
+  const kmPerUnit = litres > 0 ? totalMeters / 1000 / litres : v.kmpl
+  const rangeKm = Math.max(50, v.tank * kmPerUnit * 0.9)
+  const stops = Math.max(0, Math.ceil(totalMeters / 1000 / rangeKm) - 1)
   return {
+    rangeKm, stops,
     chunks, litres, cost,
     unit: v.fuel === 'ev' ? 'kWh' : 'L',
     perState: [...agg.entries()].map(([state, a]) => ({ state, ...a })),
