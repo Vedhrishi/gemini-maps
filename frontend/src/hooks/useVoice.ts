@@ -131,10 +131,40 @@ function pickVoice(): SpeechSynthesisVoice | null {
   return chosenVoice
 }
 
+/** The Android app has a native voice (WebView's own speechSynthesis is often silent). */
+function nativeVoice(): { speak: (t: string) => void } | null {
+  const b = (window as any).MetaMapsApp
+  return b && typeof b.speak === 'function' ? b : null
+}
+
+/** Mobile Chrome only lets a page talk after a touch: say nothing once on the first tap to unlock it. */
+let unlocked = false
+if (typeof document !== 'undefined') {
+  const unlock = () => {
+    if (unlocked) return
+    unlocked = true
+    try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; window.speechSynthesis?.speak(u) } catch { /* no speech here */ }
+  }
+  document.addEventListener('pointerdown', unlock, { once: true, capture: true })
+  document.addEventListener('keydown', unlock, { once: true, capture: true })
+}
+
 export function speak(text: string) {
-  if (!('speechSynthesis' in window) || !text) return
+  if (!text) return
+  const native = nativeVoice()
+  if (native) {
+    let done = false
+    const finish = () => { if (done) return; done = true; setTimeout(() => setTts(false), 250) }
+    ;(window as any).__mmTtsDone = () => { clearTimeout(guard); finish() }
+    const guard = setTimeout(finish, 2500 + text.length * 95)
+    setTts(true)
+    try { native.speak(text) } catch { clearTimeout(guard); finish() }
+    return
+  }
+  if (!('speechSynthesis' in window)) return
   const synth = window.speechSynthesis
   synth.cancel()
+  try { synth.resume() } catch { /* ignore */ }
   const utt = new SpeechSynthesisUtterance(text)
   const v = pickVoice()
   if (v) { utt.voice = v; utt.lang = v.lang }
@@ -181,6 +211,9 @@ export type VoiceStatus =
 
 /** iPhone and iPad: Safari's speech recognition stops and restarts unpredictably, and is
  *  unavailable in home-screen apps, so they use tap-to-talk with server transcription. */
+/** Our Android app: WebView has no working Web Speech recognition, so it listens through the open microphone. */
+export function isApp(): boolean { return /MetaMapsApp/.test(navigator.userAgent) }
+
 export function isIOS(): boolean {
   const ua = navigator.userAgent
   return /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints ?? 0) > 1)
@@ -228,6 +261,9 @@ export function useVoice({ onCommand, enabled = true }: UseVoiceOptions) {
   const backoff = useRef(300)
   const restartT = useRef<number | undefined>(undefined)
   const commitT = useRef<number | undefined>(undefined)
+  const quickEnds = useRef(0)         // recogniser sessions that died at once, with nothing heard
+  const forcePush = useRef(false)     // this phone's speech service is unreliable: use the open microphone
+  const fallbackRef = useRef<() => void>(() => {})
 
   const startContinuous = useCallback(() => {
     const w = window as any
@@ -257,6 +293,7 @@ export function useVoice({ onCommand, enabled = true }: UseVoiceOptions) {
             const t = r[k].transcript as string
             if (parseCommand(t) !== 'UNKNOWN') { best = t; break }
           }
+          quickEnds.current = 0
           window.clearTimeout(commitT.current)
           setTranscript(best.trim())
           run(best)
@@ -268,6 +305,7 @@ export function useVoice({ onCommand, enabled = true }: UseVoiceOptions) {
       }
       interim = interim.trim()
       if (interim) {
+        quickEnds.current = 0
         setStatus('hearing')
         setTranscript(interim)
         setLevel(Math.min(1, 0.35 + interim.length / 40))
@@ -286,11 +324,13 @@ export function useVoice({ onCommand, enabled = true }: UseVoiceOptions) {
       const err = ev?.error
       if (err === 'not-allowed' || err === 'service-not-allowed' || err === 'audio-capture') {
         fatal.current = true
-        // speech service refused but the microphone itself may work: fall back to tap-to-talk
-        if (err === 'service-not-allowed' && typeof MediaRecorder !== 'undefined') { setMode('push'); setStatus('ready') }
+        // speech service refused but the microphone itself may work: listen through the open microphone
+        if (err === 'service-not-allowed') fallbackRef.current()
         else setStatus('blocked')
       } else if (err === 'network') {
+        // the phone's speech service can't reach its server: after two tries, use ours
         backoff.current = Math.min(backoff.current * 2, 8000)
+        quickEnds.current += 2
       }
     }
     rec.onend = () => {
@@ -300,6 +340,8 @@ export function useVoice({ onCommand, enabled = true }: UseVoiceOptions) {
       if (!want.current || fatal.current) { if (!fatal.current) setStatus('off'); return }
       // ended almost immediately: back off instead of flickering the microphone on and off
       const quick = Date.now() - startedAt.current < 1500
+      quickEnds.current = quick ? quickEnds.current + 1 : 0
+      if (quickEnds.current >= 3) { fallbackRef.current(); return }
       backoff.current = quick ? Math.min(backoff.current * 2, 8000) : 300
       window.clearTimeout(restartT.current)
       restartT.current = window.setTimeout(startContinuous, backoff.current)
@@ -525,6 +567,18 @@ export function useVoice({ onCommand, enabled = true }: UseVoiceOptions) {
     }
   }, [handleUtterance])
 
+  // The phone's own recogniser keeps dropping out: switch to the open microphone, which is steady.
+  useEffect(() => {
+    fallbackRef.current = () => {
+      if (forcePush.current) return
+      forcePush.current = true
+      want.current = false
+      stopContinuous()
+      setMode('push')
+      void startHandsFree().then(ok => { if (!ok && !hfStarting.current) setStatus('ready') })
+    }
+  }, [stopContinuous, startHandsFree])
+
   /** Tap on the pill: start the open microphone (the tap is what lets iOS allow it), or "wake" it right now. */
   const talk = useCallback(async () => {
     if (hf.current) { wakeFor(8000); setStatus('listening'); void hf.current.ctx.resume().catch(() => {}); return }
@@ -538,7 +592,7 @@ export function useVoice({ onCommand, enabled = true }: UseVoiceOptions) {
   useEffect(() => {
     const w = window as any
     const SR = w.SpeechRecognition || w.webkitSpeechRecognition
-    const push = isIOS() || !SR
+    const push = isIOS() || isApp() || !SR || forcePush.current
     setMode(push ? 'push' : 'continuous')
     if (!enabled) {
       want.current = false
@@ -554,6 +608,8 @@ export function useVoice({ onCommand, enabled = true }: UseVoiceOptions) {
       if (!canHear) return
       // iOS only opens the microphone after a touch: the first tap anywhere in the app starts listening
       const first = () => { if (enabledRef.current && !hf.current) void startHandsFree() }
+      // Android lets the microphone open without a touch; only iPhone needs one
+      if (!isIOS()) void startHandsFree().then(ok => { if (!ok && !hfStarting.current) setStatus('ready') })
       document.addEventListener('pointerdown', first, { once: true })
       return () => { document.removeEventListener('pointerdown', first); stopHandsFree() }
     }
@@ -561,7 +617,7 @@ export function useVoice({ onCommand, enabled = true }: UseVoiceOptions) {
     fatal.current = false
     backoff.current = 300
     startContinuous()
-    return () => { want.current = false; stopContinuous() }
+    return () => { want.current = false; stopContinuous(); stopHandsFree() }
   }, [enabled, startContinuous, stopContinuous, startHandsFree, stopHandsFree])
 
   // pause while the app is talking, resume afterwards; pause in the background

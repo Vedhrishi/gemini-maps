@@ -33,6 +33,11 @@ import android.util.TypedValue;
 
 import androidx.core.content.FileProvider;
 
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
+import android.media.AudioAttributes;
+import android.media.AudioManager;
+import java.util.Locale;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,6 +58,9 @@ public class MainActivity extends Activity {
     private String pendingGeoOrigin;
     private ValueCallback<Uri[]> fileCallback;
     private Uri cameraUri;
+    private TextToSpeech tts;
+    private boolean ttsReady;
+    private String ttsPending;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -103,6 +111,8 @@ public class MainActivity extends Activity {
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setUserAgentString(s.getUserAgentString() + " MetaMapsApp/1.0");
 
+        setVolumeControlStream(AudioManager.STREAM_MUSIC);
+        initTts();
         web.addJavascriptInterface(new Bridge(), "MetaMapsApp");
         web.setWebViewClient(new Client());
         web.setWebChromeClient(new Chrome());
@@ -173,6 +183,39 @@ public class MainActivity extends Activity {
         return v;
     }
 
+    /** Meta's voice: Android's own text-to-speech (the WebView's built-in one is often silent). */
+    private void initTts() {
+        try {
+            tts = new TextToSpeech(getApplicationContext(), status -> {
+                if (status != TextToSpeech.SUCCESS || tts == null) return;
+                int r = tts.setLanguage(new Locale("en", "IN"));
+                if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) tts.setLanguage(Locale.US);
+                tts.setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
+                tts.setSpeechRate(1.05f);
+                tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                    @Override public void onStart(String id) { }
+                    @Override public void onDone(String id) { ttsDone(); }
+                    @Override public void onError(String id) { ttsDone(); }
+                });
+                ttsReady = true;
+                if (ttsPending != null) { String t = ttsPending; ttsPending = null; sayNow(t); }
+            });
+        } catch (Throwable t) { tts = null; }
+    }
+
+    private void sayNow(String text) {
+        if (tts == null) { ttsDone(); return; }
+        if (!ttsReady) { ttsPending = text; return; }
+        if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "mm") != TextToSpeech.SUCCESS) ttsDone();
+    }
+
+    /** Tell the page the voice finished, so it can start listening again. */
+    private void ttsDone() {
+        runOnUiThread(() -> { if (web != null) web.evaluateJavascript("window.__mmTtsDone&&window.__mmTtsDone()", null); });
+    }
+
     private String startUrl(Intent i) {
         Uri d = i != null ? i.getData() : null;
         if (d != null && "vedhrishi.github.io".equals(d.getHost()) && d.getPath() != null && d.getPath().startsWith("/meta-maps")) return d.toString();
@@ -199,6 +242,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (tts != null) { tts.stop(); tts.shutdown(); tts = null; }
         if (web != null) { root.removeView(web); web.destroy(); }
         super.onDestroy();
     }
@@ -274,6 +318,12 @@ public class MainActivity extends Activity {
     }
 
     private class Bridge {
+        @JavascriptInterface
+        public void speak(String text) { runOnUiThread(() -> sayNow(text)); }
+
+        @JavascriptInterface
+        public void stopSpeaking() { runOnUiThread(() -> { if (tts != null) tts.stop(); }); }
+
         @JavascriptInterface
         public void share(String title, String text, String url) {
             runOnUiThread(() -> {
