@@ -26,6 +26,10 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.view.Gravity;
+import android.util.TypedValue;
 
 import androidx.core.content.FileProvider;
 
@@ -105,10 +109,55 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new Client());
         web.setWebChromeClient(new Chrome());
 
+        if (state == null) showWelcome();
         requestStartupPermissions();
 
         if (state != null) web.restoreState(state);
         else web.loadUrl(startUrl(getIntent()));
+    }
+
+    /** Welcome card shown on every fresh launch: the creator's name inviting people in. */
+    private void showWelcome() {
+        final LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER);
+        card.setBackgroundColor(Color.parseColor("#050b18"));
+        int pad = (int) (32 * getResources().getDisplayMetrics().density);
+        card.setPadding(pad, pad, pad, pad);
+        card.setClickable(true);
+
+        card.addView(label("Vedhrishi", 40, "#00d4ff", true, 0));
+        card.addView(label("invites you to use", 18, "#9fb4cc", false, 10));
+        card.addView(label("Meta Maps", 34, "#ffffff", true, 10));
+        card.addView(label("Report road hazards. Drive around them.", 15, "#9fb4cc", false, 22));
+
+        TextView go = label("Start", 18, "#050b18", true, 36);
+        go.setBackgroundColor(Color.parseColor("#00d4ff"));
+        int h = (int) (14 * getResources().getDisplayMetrics().density), w = (int) (44 * getResources().getDisplayMetrics().density);
+        go.setPadding(w, h, w, h);
+        card.addView(go);
+
+        root.addView(card, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        final Runnable close = () -> {
+            if (card.getParent() == null) return;
+            card.animate().alpha(0f).setDuration(300).withEndAction(() -> root.removeView(card)).start();
+        };
+        go.setOnClickListener(v -> close.run());
+        card.setOnClickListener(v -> close.run());
+        card.postDelayed(close, 5000);
+    }
+
+    private TextView label(String t, int sp, String color, boolean bold, int topDp) {
+        TextView v = new TextView(this);
+        v.setText(t);
+        v.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
+        v.setTextColor(Color.parseColor(color));
+        v.setGravity(Gravity.CENTER);
+        if (bold) v.setTypeface(v.getTypeface(), android.graphics.Typeface.BOLD);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = (int) (topDp * getResources().getDisplayMetrics().density);
+        v.setLayoutParams(lp);
+        return v;
     }
 
     private String startUrl(Intent i) {
