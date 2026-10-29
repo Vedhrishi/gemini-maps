@@ -369,7 +369,7 @@ async def traffic_tile(request: Request, z: int, x: int, y: int):
     try:
         r = await _tile_client.get(
             f"https://api.tomtom.com/traffic/map/4/tile/flow/relative/{z}/{x}/{y}.png",
-            params={"key": key, "tileSize": 256, "thickness": 8},
+            params={"key": key, "tileSize": 256, "thickness": 5},
         )
     except Exception:
         return Response(status_code=204)

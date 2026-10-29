@@ -900,7 +900,7 @@ export function HazardMap3D({ reports, focusId, newHazardId, onUpvote, route, tr
         {traffic && <span style={{ width: 38, height: 6, borderRadius: 3, background: 'linear-gradient(90deg,#1fd16b,#ffc233,#ff4d3d,#b3122a)' }} aria-label="Free flowing to stopped" />}
       </button>
       {traffic && (
-        <div style={{ position: 'absolute', top: 94, right: 14, zIndex: 6, fontSize: 10, color: 'var(--text3)', textAlign: 'right', pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', top: 94, right: 14, zIndex: 6, fontSize: 10, color: 'var(--text2)', textAlign: 'right', pointerEvents: 'none', background: 'rgba(2,6,22,.82)', padding: '2px 7px', borderRadius: 6 }}>
           Live traffic by TomTom
         </div>
       )}
