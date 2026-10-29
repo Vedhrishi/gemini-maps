@@ -279,6 +279,7 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 Intent i = new Intent(Intent.ACTION_SEND);
                 i.setType("text/plain");
+                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 i.putExtra(Intent.EXTRA_SUBJECT, title);
                 i.putExtra(Intent.EXTRA_TEXT, (text == null || text.isEmpty() ? "" : text + "\n") + (url == null ? "" : url));
                 startActivity(Intent.createChooser(i, title.isEmpty() ? "Share" : title));
@@ -326,7 +327,7 @@ public class MainActivity extends Activity {
                     cameraUri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".files", f);
                     Intent cam = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
                     cam.putExtra(MediaStore.EXTRA_OUTPUT, cameraUri);
-                    cam.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                    cam.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     extra.add(cam);
                 } catch (Exception ignored) { cameraUri = null; }
             }
