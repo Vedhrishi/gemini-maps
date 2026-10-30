@@ -8,11 +8,28 @@ const loadMap3D = () => import('./components/HazardMap3D').then(m => ({ default:
 const HazardMap3D = lazy(loadMap3D)
 // start streaming the engine immediately, in parallel with the boot animation
 loadMap3D()
-import { ReportPanel } from './components/ReportPanel'
-import { HazardList } from './components/HazardList'
-import { AboutSheet } from './components/AboutSheet'
-import { SosSheet } from './components/SosSheet'
-import { LiveSheet } from './components/LiveSheet'
+// Once the map is up and the network is quiet, warm up what the first tap usually
+// needs: the report panel and the offline place index used by search. Skipped on
+// data-saver / 2G connections so we never spend a user's data on a guess.
+{
+  const warm = () => {
+    loadReportPanel()
+    const c = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
+    if (!c?.saveData && !/2g/.test(c?.effectiveType || '')) import('./lib/gazetteer').then(m => m.loadGazetteer()).catch(() => {})
+  }
+  const later = () => setTimeout(() => {
+    const ric = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback
+    ric ? ric(warm, { timeout: 10000 }) : warm()
+  }, 6000)
+  if (document.readyState === 'complete') later(); else window.addEventListener('load', later, { once: true })
+}
+// Panels that are not on screen at launch load on demand, keeping the startup bundle small.
+const loadReportPanel = () => import('./components/ReportPanel').then(m => ({ default: m.ReportPanel }))
+const ReportPanel = lazy(loadReportPanel)
+const HazardList = lazy(() => import('./components/HazardList').then(m => ({ default: m.HazardList })))
+const AboutSheet = lazy(() => import('./components/AboutSheet').then(m => ({ default: m.AboutSheet })))
+const SosSheet = lazy(() => import('./components/SosSheet').then(m => ({ default: m.SosSheet })))
+const LiveSheet = lazy(() => import('./components/LiveSheet').then(m => ({ default: m.LiveSheet })))
 import { useLive } from './hooks/useLive'
 import { liveCodeFromUrl, clearLiveCodeFromUrl } from './lib/live'
 import { TelemetryBar } from './components/TelemetryBar'
@@ -914,6 +931,7 @@ export default function App() {
           overflow: 'hidden',
           background: 'rgba(2,6,16,0.7)', backdropFilter: 'blur(24px)',
         }}>
+          <Suspense fallback={null}>
           {activeTab === 'nav' ? (
             <NavPanel
               nav={nav} userPos={userPos} locStatus={loc.status} onRequestLocation={loc.request} onStartLive={startLive}
@@ -936,10 +954,12 @@ export default function App() {
               onUpvote={handleUpvote}
             />
           )}
+          </Suspense>
         </div>
       </div>
 
       {/* ══ ABOUT SHEET ═════════════════════════════════════════════════ */}
+      <Suspense fallback={null}>
       {showShortcuts && <AboutSheet onClose={() => setShowShortcuts(false)} isDesktop={isDesktop} />}
       {showLive && (
         <LiveSheet
@@ -950,6 +970,7 @@ export default function App() {
         />
       )}
       {showSos && <SosSheet onClose={() => setShowSos(false)} onShareLocation={shareLocation} hasFix={!!loc.fix} isDesktop={isDesktop} />}
+      </Suspense>
 
       {/* ══ TOASTS ══════════════════════════════════════════════════════ */}
       <div style={{
