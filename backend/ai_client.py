@@ -362,6 +362,12 @@ def probe_muse() -> None:
         _MUSE_LAST_OK = time.time()
         _MUSE_DOWN_UNTIL = 0.0
         _MUSE_LAST_ERROR = ""
+    elif not ids:
+        # An empty /models list does not prove chat is blocked (the dashboard can show
+        # models as available while this endpoint is empty). Don't trust it: leave Muse
+        # enabled and let the first real call decide; failures still fall back to Gemini.
+        print("[AI] Muse probe: model list empty; trying real calls anyway")
+        return
     else:
         _MUSE_LAST_ERROR = "this Meta Model API key has no Muse models enabled (model list is empty)" if not ids else \
             f"Muse models not in this key's model list ({len(ids)} other models)"

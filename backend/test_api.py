@@ -171,8 +171,14 @@ def test_probe_marks_muse_down_when_key_has_no_models(monkeypatch):
         def json(self): return {"object": "list", "data": []}
     monkeypatch.setattr(httpx, "get", lambda *a, **k: R())
     ai_client.probe_muse()
+    # empty list is not trusted: Muse stays enabled and the first real call decides
+    assert ai_client.ai_status()["serving"] == "muse"
+    class R3(R):  # a list that has other models but none of ours -> down
+        def json(self): return {"data": [{"id": "other-model"}]}
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: R3())
+    ai_client.probe_muse()
     st = ai_client.ai_status()
-    assert st["serving"] == "gemini" and st["muse_ok"] is False and "no Muse models" in st["muse_error"]
+    assert st["serving"] == "gemini" and st["muse_ok"] is False and "not in this key" in st["muse_error"]
     class R2(R):
         def json(self): return {"data": [{"id": "muse-spark-1.3"}]}
     monkeypatch.setattr(httpx, "get", lambda *a, **k: R2())
