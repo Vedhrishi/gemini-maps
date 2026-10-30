@@ -3,6 +3,7 @@
 Navigation that knows about the road, not just the route. Drivers report potholes, flooding, accidents and broken signals with one photo or one sentence. A vision model checks the photo, the hazard appears on every nearby driver's map within seconds, routes are ranked around it, and a Guardian agent reroutes you mid-drive when a serious hazard appears ahead.
 
 **Live app:** https://vedhrishi.github.io/meta-maps/
+**Built by:** [Pasupuleti Vedh Rishi](https://www.linkedin.com/in/vedhrishi-pasupuleti/)
 **Built for:** Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026), Indie Developer track, "Build for Your World".
 
 Meta Maps is an independent hackathon project. It is not made by, affiliated with or endorsed by Meta Platforms, Inc.
