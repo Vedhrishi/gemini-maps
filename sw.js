@@ -1,4 +1,4 @@
-const V = 'gm-v8'
+const V = 'gm-v9'
 const TILES = 'gm-tiles-v1'
 const DATA = 'gm-data-v2' // place cells and street files: bump the number whenever the data is rebuilt
 const SHELL = ['./', 'icon-192.png', 'manifest.webmanifest']
@@ -30,7 +30,7 @@ self.addEventListener('fetch', e => {
       const hit = await c.match(r)
       if (hit) return hit
       const res = await fetch(r)
-      if (res.ok) { c.put(r, res.clone()); trim(DATA, 80) }
+      if (res.ok) { c.put(r, res.clone()); trim(DATA, 300) }
       return res
     }))
     return
