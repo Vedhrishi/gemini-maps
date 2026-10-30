@@ -327,13 +327,14 @@ def ai_status() -> dict:
     """What /health reports: configured provider, what is actually serving, and Muse state."""
     p = active_provider()
     serving = p
-    if p == "muse" and time.time() < _MUSE_DOWN_UNTIL and _gemini_available():
+    if p == "muse" and _gemini_available() and (time.time() < _MUSE_DOWN_UNTIL or (_MUSE_LAST_ERROR and not _MUSE_LAST_OK)):
         serving = "gemini"
     return {
         "provider": p,
         "serving": serving,
-        "muse_ok": (None if not _MUSE_LAST_OK and not _MUSE_LAST_ERROR else time.time() >= _MUSE_DOWN_UNTIL),
-        "muse_error": _MUSE_LAST_ERROR[:160] if time.time() < _MUSE_DOWN_UNTIL else "",
+        "muse_ok": (None if not _MUSE_LAST_OK and not _MUSE_LAST_ERROR
+                    else bool(_MUSE_LAST_OK) and not _MUSE_LAST_ERROR and time.time() >= _MUSE_DOWN_UNTIL),
+        "muse_error": _MUSE_LAST_ERROR[:160],
         "last_model": _LAST_MODEL,
     }
 
@@ -375,8 +376,44 @@ def probe_muse() -> None:
     print(f"[AI] Muse probe: {len(ids)} models; muse ok={_MUSE_DOWN_UNTIL == 0.0}")
 
 
+_MUSE_PROBING = False
+_MUSE_LAST_PROBE = 0.0
+MUSE_REPROBE_S = 600  # while Muse is unavailable, check it in the background every 10 min
+
+
+def _probe_muse_bg() -> None:
+    """Background check while Muse is down: one tiny chat call. Users never wait on it;
+    the moment it succeeds, real requests switch back to Muse."""
+    global _MUSE_PROBING, _MUSE_LAST_PROBE, _MUSE_DOWN_UNTIL, _MUSE_LAST_ERROR, _MUSE_LAST_OK
+    if _MUSE_PROBING or time.time() - _MUSE_LAST_PROBE < MUSE_REPROBE_S:
+        return
+    _MUSE_PROBING, _MUSE_LAST_PROBE = True, time.time()
+
+    def run():
+        global _MUSE_PROBING, _MUSE_DOWN_UNTIL, _MUSE_LAST_ERROR, _MUSE_LAST_OK
+        try:
+            import httpx
+            for model in dict.fromkeys([MUSE_MODEL, "muse-spark-1.3", "muse-wonder-1.0"]):
+                r = httpx.post(f"{MUSE_BASE}/chat/completions", timeout=20,
+                               headers={"Authorization": f"Bearer {_muse_key()}"},
+                               json={"model": model, "messages": [{"role": "user", "content": "ok"}], "max_completion_tokens": 16})
+                if r.status_code == 200:
+                    _MUSE_DOWN_UNTIL, _MUSE_LAST_ERROR, _MUSE_LAST_OK = 0.0, "", time.time()
+                    print(f"[AI] Muse is back ({model}); switching from Gemini")
+                    return
+            _MUSE_LAST_ERROR = f"{model}: HTTP {r.status_code} {r.text[:120]}"
+            _MUSE_DOWN_UNTIL = time.time() + 3600
+        except Exception as e:
+            print(f"[AI] Muse background check failed: {type(e).__name__}")
+        finally:
+            _MUSE_PROBING = False
+
+    import threading
+    threading.Thread(target=run, daemon=True).start()
+
+
 def _with_fallback(muse_fn, gemini_fn, label: str):
-    global _MUSE_DOWN_UNTIL, _MUSE_LAST_ERROR, _MUSE_LAST_OK, _LAST_MODEL
+    global _MUSE_DOWN_UNTIL, _MUSE_LAST_ERROR, _MUSE_LAST_OK, _LAST_MODEL, _MUSE_LAST_PROBE
     if time.time() >= _MUSE_DOWN_UNTIL or not _gemini_available():
         try:
             out = muse_fn()
@@ -386,10 +423,15 @@ def _with_fallback(muse_fn, gemini_fn, label: str):
             return out, label
         except Exception as e:
             _MUSE_LAST_ERROR = f"{type(e).__name__}: {e}"
-            _MUSE_DOWN_UNTIL = time.time() + (1800 if "not found" in str(e).lower() else 300)
-            print(f"[AI] Muse failed, falling back to Gemini for 10 min: {_MUSE_LAST_ERROR[:300]}")
+            # model-access errors don't fix themselves quickly: serve Gemini and let the
+            # background check switch back; other errors retry sooner
+            _MUSE_DOWN_UNTIL = time.time() + (3600 if "not found" in str(e).lower() else 300)
+            _MUSE_LAST_PROBE = time.time()
+            print(f"[AI] Muse failed, serving Gemini: {_MUSE_LAST_ERROR[:300]}")
             if not _gemini_available():
                 raise
+    else:
+        _probe_muse_bg()
     out = gemini_fn()
     _LAST_MODEL = "gemini"
     return out, "gemini"

@@ -263,3 +263,29 @@ def test_traffic_tile_without_key_is_empty(monkeypatch):
     assert c.get("/api/traffic/tile/12/2930/1830.png").status_code == 204
     monkeypatch.setenv("TOMTOM_API_KEY", "k")
     assert c.get("/api/traffic/tile/3/99/1.png").status_code == 204   # tile outside the grid
+
+
+def test_muse_down_serves_gemini_and_background_check_switches_back(monkeypatch):
+    import ai_client, httpx, time as _t
+    monkeypatch.setenv("AI_PROVIDER", "muse"); monkeypatch.setenv("MUSE_API_KEY", "k"); monkeypatch.setenv("GEMINI_API_KEY", "g")
+    calls = {"muse": 0}
+    def muse():
+        calls["muse"] += 1
+        raise RuntimeError("404 The requested model was not found")
+    # first call: Muse fails once, Gemini answers
+    monkeypatch.setattr(ai_client, "_MUSE_DOWN_UNTIL", 0.0); monkeypatch.setattr(ai_client, "_MUSE_LAST_OK", 0.0)
+    out, model = ai_client._with_fallback(muse, lambda: "g", "muse-spark")
+    assert (out, model) == ("g", "gemini") and calls["muse"] == 1
+    assert ai_client.ai_status()["serving"] == "gemini"
+    # later calls skip Muse entirely (no extra latency) ...
+    ai_client._with_fallback(muse, lambda: "g", "muse-spark")
+    assert calls["muse"] == 1
+    # ... while a background check finds Muse working again
+    class R: status_code = 200; text = "{}"
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: R())
+    monkeypatch.setattr(ai_client, "_MUSE_LAST_PROBE", 0.0)
+    ai_client._probe_muse_bg()
+    for _ in range(50):
+        if not ai_client._MUSE_PROBING: break
+        _t.sleep(0.05)
+    assert ai_client._MUSE_DOWN_UNTIL == 0.0 and ai_client.ai_status()["serving"] == "muse"
